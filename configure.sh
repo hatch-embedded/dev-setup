@@ -181,6 +181,7 @@ configure_git() {
     local EMAIL
     local USER
     local ENTRY
+    local ERROR_LEVEL
 
     mkdir -p $HOME/git
     mkdir -p $SSH_DIR
@@ -239,24 +240,31 @@ IdentityFile $PRIVKEY"
     fi
 
     # Test the key
+    set +e
     ssh -T git@github.com 2>&1
+    ERROR_LEVEL=$?
+    set -e
 
-    if [ $? -eq 1 ]; then
+    if [ $ERROR_LEVEL -eq 1 ]; then
         echo "git ssh key: OK"
-    elif [ $? -eq 255 ]; then
+    elif [ $ERROR_LEVEL -eq 255 ]; then
         echo ""
         echo ""
-        echo "Here is your SSH key. Please copy it and add it to your GitHub account (https://github.com/settings/keys):"
+        echo "Below is your SSH key for git authentication. Please copy it and add it to your GitHub account (https://github.com/settings/keys) before continuing."
         echo ""
         cat $PUBKEY
 
         prompt_continue
 
         # Test again
+        set +e
         ssh -T git@github.com 2>&1
-        if [ $? -eq 1 ]; then
+        ERROR_LEVEL=$?
+        set -e
+
+        if [ $ERROR_LEVEL -eq 1 ]; then
             echo "git ssh key: OK"
-        elif [ $? -eq 255 ]; then
+        elif [ $ERROR_LEVEL -eq 255 ]; then
             echo "Failed to authenticate as $GIT_USER ($GIT_EMAIL) using $PRIVKEY. Please try again."
             return 1
         else
