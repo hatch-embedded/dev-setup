@@ -32,7 +32,7 @@ enable_passwordless_sudo() {
 
     echo ""
     RESPONSE=$(prompt_yes_no "Passwordless sudo saves you from having to type your password every time you execute a command with sudo priveledges. The tradeoff is that root access becomes as secure as your user login method, which is fine in most cases. Would you like to enable passwordless sudo now [Y/n]?")
-    if [[$RESPONSE == 'y']]; then
+    if [[ $RESPONSE == 'y']]; then
         echo "$LINE" | sudo tee -a "$FILEPATH"
         echo "Passwordless sudo: OK"
     else
@@ -45,7 +45,7 @@ install_packages() {
     UTIL_PKG="wget curl openssh-server"
     DEV_PKG="git cmake ccache docker"
     PYTHON_PKG="python3 python3-venv python3-setuptools python3-pip"
-    sudo apt-get install -m -y $SYS_PKG $UTIL_PKG $DEV_PKG $PYTHON_PKG
+    sudo apt-get install -qq -m -y $SYS_PKG $UTIL_PKG $DEV_PKG $PYTHON_PKG
 
     echo ""
     echo "Common packages installation complete"
@@ -65,7 +65,7 @@ install_docker() {
 
     update
 
-    sudo apt-get install -m -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    sudo apt-get install -qq -m -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     sudo docker run hello-world
     echo "Docker: OK"
 }
@@ -108,7 +108,7 @@ update_firmware() {
     sudo mv /etc/apt/sources.list.tmp /etc/apt/sources.list
 
     $SH/update.sh
-    sudo apt-get install -m -y fwupd firmware-linux-nonfree
+    sudo apt-get install -qq -m -y fwupd firmware-linux-nonfree
 
     # Reload fwupd service to ensure it's up-to-date
     sudo systemctl daemon-reload
@@ -181,6 +181,8 @@ configure_git() {
         GIT_EMAIL=$(git config --global user.email)
     fi
 
+    echo "git config: OK"
+
     # Generate SSH key if needed
 
     if [ ! -f $PRIVKEY ]; then
@@ -188,6 +190,8 @@ configure_git() {
         eval "$(ssh-agent -s)"
         ssh-add $PRIVKEY
     fi
+
+    echo "git ssh key: OK"
 
     # Update ssh config file
 
@@ -204,7 +208,7 @@ User git
 IdentityFile $PRIVKEY"
 
         # add github to known hosts
-        ssh-keygen -R github.com > /dev/null 2&>1
+        ssh-keygen -R github.com > /dev/null 2&>1 || :
         ssh-keyscan -H github.com >> $SSH_HOSTS
         rm -f $SSH_HOSTS.old*
 
@@ -212,6 +216,7 @@ IdentityFile $PRIVKEY"
         echo "Entry added to $SSH_CONFIG."
     fi
 
+    echo ""
     echo "Here is your SSH key. Please copy it and add it to your GitHub account (https://github.com/settings/keys) if you have not already:"
     echo ""
     cat $PUBKEY
@@ -242,7 +247,7 @@ prompt_yes_no() {
     local PROMPT=$1
     local RESPONSE
 
-    echo $PROMPT
+    echo "$PROMPT"
     read -p ">" RESPONSE
 
     RESPONSE=${RESPONSE:-Y}
@@ -268,26 +273,28 @@ enable_passwordless_sudo
 update
 install_packages
 install_docker
-configure_git
 
 configure_ssh
 prompt_continue
 
+configure_git
+prompt_continue
+
 echo ""
-RESPONSE=$(prompt_yes_no "Would you like to isntall firmware updates right now [Y/n]?")
-if [[$RESPONSE == 'y']]; then
+RESPONSE=$(prompt_yes_no "Would you like to install firmware updates right now [Y/n]?")
+if [[ $RESPONSE == 'y']]; then
     update_firmware
 fi
 
 echo ""
 RESPONSE=$(prompt_yes_no "Would you like to install a weekly cron job to keep your system up-to-date [Y/n]?")
-if [[$RESPONSE == 'y']]; then
+if [[ $RESPONSE == 'y']]; then
     update_cron_job
 fi
 
 echo ""
 RESPONSE=$(prompt_yes_no "Would you like to disable and uninstall any GUI components from your system [Y/n]?")
-if [[$RESPONSE == 'y']]; then
+if [[ $RESPONSE == 'y']]; then
     uninstall_gui
 fi
 

@@ -28,47 +28,59 @@ if "!user!"=="" set user=%USERNAME%
 @REM Ensure SSH key pair
 
 set ssh_dir=%userprofile%\.ssh
-
-if not exist "%ssh_dir%\id_ed25519" (
-    echo Generating new SSH key...
-    ssh-keygen -t ed25519 -f "%ssh_dir%\id_ed25519" -N ""
-)
-
 set pubkey="%ssh_dir%\id_ed25519.pub"
 set privkey="%ssh_dir%\id_ed25519"
 
-if not exist !pubkey! (
-    echo Key public does not exist, generating now...
-    ssh-keygen -y -f "%ssh_dir%\id_ed25519" > !pubkey!
+if not exist "%privkey%" (
+    echo Generating new SSH key...
+    ssh-keygen -t ed25519 -f "%privkey%" -N ""
+    if !errorlevel! neq 0 (
+        echo Failed to generate private key.
+        pause
+        exit /b
+    )
 )
 
-set ssh=ssh -i !privkey! -o BatchMode=yes -o StrictHostKeyChecking=no -p !port! !user!@!ip!
+if not exist "%pubkey%" (
+    echo Key public does not exist, generating now...
+    ssh-keygen -y -f "%privkey%" > "%pubkey%"
+    if !errorlevel! neq 0 (
+        echo Failed to generate public key.
+        pause
+        exit /b
+    )
+)
+
+set ssh=ssh -i "%privkey%" -o BatchMode=yes -o StrictHostKeyChecking=no -p !port! !user!@!ip!
 
 %ssh% "echo SSH key already configured." 2>NUL
 if !errorlevel! neq 0 (
     echo Copying SSH key...
-    type "!pubkey_path!" | ssh -i !privkey! -o StrictHostKeyChecking=no -p !port! !user!@!ip! "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+    type "!pubkey!" | ssh -o StrictHostKeyChecking=no -p !port! !user!@!ip! "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
     if !errorlevel! neq 0 (
         echo Failed to copy the public key to the SSH server.
+        pause
+        exit /b
     ) else (
-        %ssh% "echo SSH Key successfully installed." 2>NUL
+        %ssh% "echo SSH key successfully installed." 2>NUL
     )
 )
 
 @REM Update local ssh config file
 
-set "config_path=!ssh_dir!\config"
+set config="!ssh_dir!\config"
 set "host_entry=Host !ip!-!user!"
-set "entry_exists=false"
+set entry_exists="false"
 
-for /f "tokens=*" %%i in ('type "!config_path!" ^| findstr /C:"!host_entry!"') do (
-    set "entry_exists=true"
+for /f "tokens=*" %%i in ('type "!config!" ^| findstr /C:"!host_entry!"') do (
+    set entry_exists="true"
 )
 
-if !entry_exists! == true (
-    echo Updating '!config_path!' entry...
-    > "!config_path!.tmp" (
-        for /f "delims=" %%a in ('type "!config_path!"') do (
+if !entry_exists! == "true" (
+    echo Updating '!config!' entry...
+    set "in_entry=false"
+    > "!config!.tmp" (
+        for /f "delims=" %%a in ('type "!config!"') do (
             set "line=%%a"
             if "!line!"=="!host_entry!" (
                 echo !host_entry!
@@ -77,28 +89,35 @@ if !entry_exists! == true (
                 echo     User !user!
                 echo     AddKeysToAgent yes
                 echo     IdentityFile !privkey!
-                rem Dynamic skipping of the entry lines
                 set "in_entry=true"
             ) else (
                 if "!in_entry!"=="true" (
                     if "!line:~0,1!"==" " (
-                        rem continue skipping lines
+                        @REM Skip the line because it's part of the previous entry.
                     ) else (
                         set "in_entry=false"
-                        echo !line!
+                        if "!line!"=="" (
+                            echo.
+                        ) else (
+                            echo !line!
+                        )
                     )
                 ) else (
-                    echo !line!
+                    if "!line!"=="" (
+                        echo.
+                    ) else (
+                        echo !line!
+                    )
                 )
             )
         )
     )
-    move /Y "!config_path!.tmp" "!config_path!" > NUL
+    move /Y "!config!.tmp" "!config!" > NUL
     echo Entry updated successfully
 ) else (
-    echo Adding entry to '!config_path!'...
-    echo. >> "!config_path!"
-    >> "!config_path!" (
+    echo Adding entry to '!config!'...
+    echo. >> "!config!"
+    >> "!config!" (
         echo !host_entry!
         echo     HostName !ip!
         echo     Port !port!
@@ -107,6 +126,13 @@ if !entry_exists! == true (
         echo     IdentityFile !privkey!
     )
     echo Entry added successfully
+)
+
+%ssh% "echo hi > /dev/null"
+if !errorlevel! neq 0 (
+    echo Failed to connect using SSH key after installing
+    pause
+    exit /b
 )
 
 @REM Handle disabling of clear-text passwords
