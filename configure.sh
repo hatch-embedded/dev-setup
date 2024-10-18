@@ -5,6 +5,29 @@ SH="$HOME/sh"
 
 # Functions
 
+prompt_continue() {
+    echo ""
+    echo "Press any key to continue."
+    read -n 1 -s    
+}
+
+prompt_yes_no() {
+    local PROMPT=$1
+    local RESPONSE
+
+    echo "$PROMPT"
+    read -p "> " RESPONSE
+
+    RESPONSE=${RESPONSE:-Y}
+    RESPONSE=$(echo "$RESPONSE" | tr '[:upper:]' '[:lower:]')
+
+    if [[ "$RESPONSE" == "y" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 download_scripts() {
     local FILENAMES=("update.sh" "cron.sh")
 
@@ -31,8 +54,7 @@ enable_passwordless_sudo() {
     fi
 
     echo ""
-    RESPONSE=$(prompt_yes_no "Passwordless sudo saves you from having to type your password every time you execute a command with sudo priveledges. The tradeoff is that root access becomes as secure as your user login method, which is fine in most cases. Would you like to enable passwordless sudo now [Y/n]?")
-    if [[ $RESPONSE == 'y']]; then
+    if prompt_yes_no "Passwordless sudo saves you from having to type your password every time you execute a command with sudo priveledges. The tradeoff is that root access becomes as secure as your user login method, which is fine in most cases. Would you like to enable passwordless sudo now [Y/n]?"; then
         echo "$LINE" | sudo tee -a "$FILEPATH"
         echo "Passwordless sudo: OK"
     else
@@ -167,7 +189,7 @@ configure_git() {
 
     if [ -z "$GIT_USER" ]; then
         echo "Enter your git username:"
-        read -p ">" USER
+        read -p "> " USER
         git config --global user.name "$USER"
         GIT_USER=$(git config --global user.name)
     fi
@@ -175,7 +197,7 @@ configure_git() {
     if [ -z "$GIT_EMAIL" ]; then
         if [ -z "$EMAIL" ]; then
             echo "Enter your git email:"
-            read -p ">" EMAIL
+            read -p "> " EMAIL
         fi
         git config --global user.email "$EMAIL"
         GIT_EMAIL=$(git config --global user.email)
@@ -237,29 +259,6 @@ uninstall_gui() {
     echo "GUI Uninstalled - Reboot with "sudo reboot" to apply changes"
 }
 
-prompt_continue() {
-    echo ""
-    echo "Press any key to continue."
-    read -n 1 -s    
-}
-
-prompt_yes_no() {
-    local PROMPT=$1
-    local RESPONSE
-
-    echo "$PROMPT"
-    read -p ">" RESPONSE
-
-    RESPONSE=${RESPONSE:-Y}
-    RESPONSE=$(echo "$RESPONSE" | tr '[:upper:]' '[:lower:]')
-
-    if [[ "$RESPONSE" == "y" ]]; then
-        echo "y"
-    else
-        echo "n"
-    fi
-}
-
 echo ""
 echo "Welcome to the interactive setup script for configuring a fresh Linux install to be suited for embedded firmware development at Hatch. This was tested on Debian 12 but was designed to be as portable as possible (i.e. it should work on Ubuntu)."
 
@@ -281,20 +280,18 @@ configure_git
 prompt_continue
 
 echo ""
-RESPONSE=$(prompt_yes_no "Would you like to install firmware updates right now [Y/n]?")
-if [[ $RESPONSE == 'y']]; then
+
+if prompt_yes_no "Would you like to install firmware updates right now [Y/n]?"; then
     update_firmware
 fi
 
 echo ""
-RESPONSE=$(prompt_yes_no "Would you like to install a weekly cron job to keep your system up-to-date [Y/n]?")
-if [[ $RESPONSE == 'y']]; then
+if prompt_yes_no "Would you like to install a weekly cron job to keep your system up-to-date [Y/n]?"; then
     update_cron_job
 fi
 
 echo ""
-RESPONSE=$(prompt_yes_no "Would you like to disable and uninstall any GUI components from your system [Y/n]?")
-if [[ $RESPONSE == 'y']]; then
+if prompt_yes_no "Would you like to disable and uninstall any GUI components from your system [Y/n]?"; then
     uninstall_gui
 fi
 
