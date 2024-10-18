@@ -64,15 +64,14 @@ enable_passwordless_sudo() {
 }
 
 install_packages() {
-    SYS_PKG="ufw ca-certificates gnupg"
-    UTIL_PKG="wget curl openssh-server"
-    DEV_PKG="git cmake ccache docker"
-    PYTHON_PKG="python3 python3-venv python3-setuptools python3-pip"
+    local SYS_PKG="ufw ca-certificates gnupg"
+    local UTIL_PKG="wget curl openssh-server"
+    local DEV_PKG="git cmake ccache docker"
+    local PYTHON_PKG="python3 python3-venv python3-setuptools python3-pip"
     sudo apt-get install -qq -m -y $SYS_PKG $UTIL_PKG $DEV_PKG $PYTHON_PKG
 
     echo ""
     echo "Common packages installation complete"
-    echo ""
 }
 
 install_docker() {
@@ -95,9 +94,9 @@ install_docker() {
 
 update_firmware() {
     # Add firmware to apt sources
-    SOURCES_LIST="/etc/apt/sources.list"
-    BACKUP_FILE="/etc/apt/sources.list.bak"
-    TAGS=("contrib" "non-free" "non-free-firmware")
+    local SOURCES_LIST="/etc/apt/sources.list"
+    local BACKUP_FILE="/etc/apt/sources.list.bak"
+    local TAGS=("contrib" "non-free" "non-free-firmware")
 
     if [ ! -f "$BACKUP_FILE" ]; then
         sudo cp $SOURCES_LIST $BACKUP_FILE
@@ -130,7 +129,7 @@ update_firmware() {
     # Replace the original file with the modified one
     sudo mv /etc/apt/sources.list.tmp /etc/apt/sources.list
 
-    $SH/update.sh
+    update
     sudo apt-get install -qq -m -y fwupd firmware-linux-nonfree
 
     # Reload fwupd service to ensure it's up-to-date
@@ -148,7 +147,7 @@ update_firmware() {
 }
 
 update_cron_job() {
-    $HOME/sh/cron.sh "update" "$HOME/sh/update.sh" "0 3 * * 1"
+    $SH/cron.sh "update" "$SH/update.sh" "0 3 * * 1"
     echo System updates will be installed/applied every Monday at 3am
 }
 
