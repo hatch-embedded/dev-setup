@@ -184,10 +184,7 @@ configure_git() {
     # Generate SSH key if needed
 
     if [ ! -f $PRIVKEY ]; then
-        echo "Enter your git email:"
-        read -p ">" EMAIL
-
-        ssh-keygen -t ed25519 -f $PRIVKEY -N "" -C "$EMAIL"
+        ssh-keygen -t ed25519 -f $PRIVKEY -N "" -C "$GIT_EMAIL"
         eval "$(ssh-agent -s)"
         ssh-add $PRIVKEY
     fi
@@ -295,6 +292,6 @@ if [[$RESPONSE == 'y']]; then
 fi
 
 echo ""
-echo "Configuration complete! Please see firmware repo for setup steps specific to building and flashing firmware."
+echo "Configuration complete! Please see firmware repo for setup steps regarding building and flashing product firmware."
 prompt_continue
 echo ""
