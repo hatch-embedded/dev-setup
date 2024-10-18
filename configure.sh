@@ -8,7 +8,8 @@ SH="$HOME/sh"
 prompt_continue() {
     echo ""
     echo "Press any key to continue."
-    read -n 1 -s    
+    read -n 1 -s
+    echo ""
 }
 
 prompt_yes_no() {
@@ -110,7 +111,7 @@ update_firmware() {
         fi
 
         new_line="$line"
-        
+
         if ! [[ "$line" =~ contrib ]]; then
             new_line="$new_line contrib"
         fi
@@ -159,10 +160,12 @@ configure_ssh() {
     sudo systemctl enable ssh --now
 
     echo ""
+    echo ""
     echo "SSH server enabled and running. Please run $HOST/bat/configure-ssh.bat on the client PC for easy one-time SSH setup - otherwise you may use the following command to manually connect:"
     echo "    ssh $(logname)@$IP"
     echo ""
     echo "You should also consider setting up a static DHCP rule for $MAC to $IP so this does not change. This can be done in your router's web portal. If you would like to access this machine from an external network, it's recommended you create a port forward rule from a random external port to $IP:22."
+    echo ""
 }
 
 configure_git() {
@@ -239,15 +242,15 @@ IdentityFile $PRIVKEY"
     fi
 
     echo ""
+    echo ""
     echo "Here is your SSH key. Please copy it and add it to your GitHub account (https://github.com/settings/keys) if you have not already:"
     echo ""
     cat $PUBKEY
-    echo ""
 }
 
 uninstall_gui() {
     sudo systemctl set-default multi-user.target
-    
+
     if systemctl is-active --quiet gdm3; then
         sudo systemctl stop gdm3
         sudo systemctl disable gdm3
