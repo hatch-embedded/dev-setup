@@ -215,8 +215,6 @@ configure_git() {
         ssh-add $PRIVKEY
     fi
 
-    echo "git ssh key: OK"
-
     # Update ssh config file
 
     # Escape variables for use in sed
@@ -240,11 +238,35 @@ IdentityFile $PRIVKEY"
         echo "Entry added to $SSH_CONFIG."
     fi
 
-    echo ""
-    echo ""
-    echo "Here is your SSH key. Please copy it and add it to your GitHub account (https://github.com/settings/keys) if you have not already:"
-    echo ""
-    cat $PUBKEY
+    # Test the key
+    ssh -T git@github.com 2>&1
+
+    if [ $? -eq 1 ]; then
+        echo "git ssh key: OK"
+    elif [ $? -eq 255 ]; then
+        echo ""
+        echo ""
+        echo "Here is your SSH key. Please copy it and add it to your GitHub account (https://github.com/settings/keys):"
+        echo ""
+        cat $PUBKEY
+
+        prompt_continue
+
+        # Test again
+        ssh -T git@github.com 2>&1
+        if [ $? -eq 1 ]; then
+            echo "git ssh key: OK"
+        elif [ $? -eq 255 ]; then
+            echo "Failed to authenticate as $GIT_USER ($GIT_EMAIL) using $PRIVKEY. Please try again."
+            return 1
+        else
+            echo "An unexpected error occurred."
+            return 1
+        fi
+    else
+        echo "An unexpected error occurred."
+        return 1
+    fi
 }
 
 uninstall_gui() {
@@ -274,12 +296,9 @@ enable_passwordless_sudo
 update
 install_packages
 install_docker
-
 configure_ssh
 prompt_continue
-
 configure_git
-prompt_continue
 
 echo ""
 
