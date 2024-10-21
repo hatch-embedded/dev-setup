@@ -67,7 +67,7 @@ install_packages() {
     local SYS_PKG="ufw ca-certificates gnupg"
     local UTIL_PKG="wget curl openssh-server"
     local DEV_PKG="git cmake ccache docker"
-    local PYTHON_PKG="python3 python3-venv python3-setuptools python3-pip"
+    local PYTHON_PKG="python3 python3-full python3-venv python3-virtualenv python3-setuptools python3-pip python-is-python3"
     sudo apt-get install -qq -m -y $SYS_PKG $UTIL_PKG $DEV_PKG $PYTHON_PKG
 
     echo ""
