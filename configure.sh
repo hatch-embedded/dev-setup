@@ -277,6 +277,19 @@ IdentityFile $PRIVKEY"
     fi
 }
 
+add_user_to_dialout() {
+    if groups $(logname) | grep -qw dialout; then
+        echo "dialout group: OK"
+    else
+        sudo usermod -a -G dialout $(logname)
+
+        echo ""
+        echo "User added to dialout group. System restart via 'sudo reboot' is required before you can use serial devices on this."
+
+        prompt_continue
+    fi
+}
+
 uninstall_gui() {
     sudo systemctl set-default multi-user.target
 
@@ -307,6 +320,7 @@ install_docker
 configure_ssh
 prompt_continue
 configure_git
+add_user_to_dialout
 
 echo ""
 
@@ -325,6 +339,6 @@ if prompt_yes_no "Would you like to disable and uninstall any GUI components fro
 fi
 
 echo ""
-echo "Configuration complete! Please see firmware repo for setup steps regarding building and flashing product firmware."
+echo "Configuration complete! Please see the firmware repo for setup steps regarding building and flashing product firmware."
 prompt_continue
 echo ""
