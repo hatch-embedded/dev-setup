@@ -2,6 +2,7 @@
 set -e
 HOST="https://hatch-embedded.github.io/dev-setup"
 SH="$HOME/sh"
+REBOOT_PENDING=0
 
 # Functions
 
@@ -88,7 +89,20 @@ install_docker() {
     update
 
     sudo apt-get install -qq -m -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    
+    if groups $(logname) | grep -qw docker; then
+        echo "docker group: OK" 
+    else
+        echo "Adding user to docker group..."
+        sudo usermod -a -G docker $(logname)
+
+        echo "docker group: OK"
+        echo "System restart via is required before you can use docker without sudo."
+        REBOOT_PENDING=1
+    fi
+
     sudo docker run hello-world
+
     echo "Docker: OK"
 }
 
@@ -284,9 +298,8 @@ add_user_to_dialout() {
         sudo usermod -a -G dialout $(logname)
 
         echo ""
-        echo "User added to dialout group. System restart via 'sudo reboot' is required before you can use serial devices on this."
-
-        prompt_continue
+        echo "User added to dialout group. System restart is required before you can use serial devices on this machine."
+        REBOOT_PENDING=1
     fi
 }
 
@@ -296,12 +309,14 @@ uninstall_gui() {
     if systemctl is-active --quiet gdm3; then
         sudo systemctl stop gdm3
         sudo systemctl disable gdm3
+        REBOOT_PENDING=1
     fi
 
     sudo apt-get remove -qq -y --purge gnome-core kde-plasma-desktop xfce4 lxde
 
     echo ""
-    echo "GUI Uninstalled - Reboot with "sudo reboot" to apply changes"
+    echo "GUI Uninstalled - Restart to apply changes"
+}
 }
 
 echo ""
@@ -340,5 +355,13 @@ fi
 
 echo ""
 echo "Configuration complete! Please see the firmware repo for setup steps regarding building and flashing product firmware."
+
+if [ $REBOOT_PENDING -eq 1 ]; then
+    echo ""
+    if prompt_yes_no "System restart is required for some changes to take effect. Would you like to do this now [Y/n]?"; then
+        sudo reboot
+    fi
+fi
+
 prompt_continue
 echo ""
