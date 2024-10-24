@@ -317,6 +317,19 @@ uninstall_gui() {
     echo ""
     echo "GUI Uninstalled - Restart to apply changes"
 }
+
+setup_rest_plus() {
+    echo ""
+    echo "Cloning 'rest_plus'..."
+
+    mkdir -p $HOME/git
+    cd $HOME/git
+    git clone --progress --recursive git@github.com:hatch-baby/rest_plus.git
+    
+    echo ""
+    echo "Setting up 'rest_plus'..."
+
+    $HOME/git/rest_plus/tools/setup/setup.sh
 }
 
 echo ""
@@ -351,6 +364,13 @@ fi
 echo ""
 if prompt_yes_no "Would you like to disable and uninstall any GUI components from your system [Y/n]?"; then
     uninstall_gui
+fi
+
+if [ ! -d "$HOME/git/rest_plus" ]; then
+    echo ""
+    if prompt_yes_no "Would you like to clone and initialize the 'rest_plus' firmware repository [Y/n]?"; then
+        setup_rest_plus
+    fi
 fi
 
 echo ""
