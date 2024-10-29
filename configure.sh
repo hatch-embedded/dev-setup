@@ -55,13 +55,8 @@ enable_passwordless_sudo() {
         return 0 # already passwordless
     fi
 
-    echo ""
-    if prompt_yes_no "Passwordless sudo saves you from having to type your password every time you execute a command with sudo priveledges. The tradeoff is that root access becomes as secure as your user login method, which is fine in most cases. Would you like to enable passwordless sudo now [Y/n]?"; then
-        echo "$LINE" | sudo tee -a "$FILEPATH"
-        echo "Passwordless sudo: OK"
-    else
-        echo "Passwordless sudo: Skipped"
-    fi
+    echo "$LINE" | sudo tee -a "$FILEPATH"
+    echo "Passwordless sudo: OK"
 }
 
 install_packages() {
@@ -174,8 +169,7 @@ configure_ssh() {
 
     echo ""
     echo ""
-    echo "SSH server enabled and running. Please run $HOST/bat/configure-ssh.bat on the client PC for easy one-time SSH setup - otherwise you may use the following command to manually connect:"
-    echo "    ssh $(logname)@$IP"
+    echo "SSH server enabled and running. Please run $HOST/bat/configure-ssh.bat on your Windows PC for easy one-time SSH setup."
     echo ""
     echo "You should also consider setting up a static DHCP rule for $MAC to $IP so this does not change. This can be done in your router's web portal. If you would like to access this machine from an external network, it's recommended you create a port forward rule from a random external port to $IP:22."
     echo ""
@@ -333,7 +327,7 @@ setup_rest_plus() {
 }
 
 echo ""
-echo "Welcome to the interactive setup script for configuring a fresh Linux install to be suited for embedded firmware development at Hatch. This was tested on Debian 12 but was designed to be as portable as possible (i.e. it should work on Ubuntu)."
+echo "Welcome to the interactive setup script for configuring a fresh Linux install to be suited for embedded firmware development at Hatch. This was tested on Debian 12 but was designed to be as portable as possible."
 
 echo ""
 echo "NOTE: This setup script is designed to be idempotent, meaning it may be restarted or executed multiple times without consequence."
@@ -350,27 +344,16 @@ prompt_continue
 configure_git
 add_user_to_dialout
 
-echo ""
-
-if prompt_yes_no "Would you like to install firmware updates right now [Y/n]?"; then
-    update_firmware
-fi
+update_cron_job
 
 echo ""
-if prompt_yes_no "Would you like to install a weekly cron job to keep your system up-to-date [Y/n]?"; then
-    update_cron_job
-fi
-
-echo ""
-if prompt_yes_no "Would you like to disable and uninstall any GUI components from your system [Y/n]?"; then
+if prompt_yes_no "Would you like to disable and uninstall all desktop components from your system (only do this if you are going to use this machine as a headless server) [Y/n]?"; then
     uninstall_gui
 fi
 
 if [ ! -d "$HOME/git/rest_plus" ]; then
     echo ""
-    if prompt_yes_no "Would you like to clone and initialize the 'rest_plus' firmware repository [Y/n]?"; then
-        setup_rest_plus
-    fi
+    setup_rest_plus
 fi
 
 echo ""

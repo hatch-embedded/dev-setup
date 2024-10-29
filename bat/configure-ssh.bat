@@ -8,11 +8,11 @@ echo.
 echo Please enter the details of the server you would like to configure a connection to:
 
 echo.
-echo ip address or hostname:
+echo IP address or hostname:
 set /p ip=">"
-echo port [22]:
+echo Port [22]:
 set /p port=">"
-echo username [%USERNAME%]:
+echo Username [%USERNAME%]:
 set /p user=">"
 
 echo.
