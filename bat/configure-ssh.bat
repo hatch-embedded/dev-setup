@@ -167,5 +167,11 @@ if !port! == 22 (
 )
 echo.
 
+echo Would you like to open an SSH session now? [Y/n]
+set /p response=">"
+if /i "!response!" NEQ "n" (
+    ssh !user!@!ip! -p !port!
+)
+
 pause
 exit /b
