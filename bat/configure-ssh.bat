@@ -82,6 +82,7 @@ if !entry_exists! == "true" (
     > "!config!.tmp" (
         for /f "delims=" %%a in ('type "!config!"') do (
             set "line=%%a"
+            set "trimmed_line=!line: =!"
             if "!line!"=="!host_entry!" (
                 echo !host_entry!
                 echo     HostName !ip!
@@ -93,17 +94,17 @@ if !entry_exists! == "true" (
             ) else (
                 if "!in_entry!"=="true" (
                     if "!line:~0,1!"==" " (
-                        @REM Skip the line because it's part of the previous entry.
+                        REM Skip the line because it's part of the previous entry.
                     ) else (
                         set "in_entry=false"
-                        if "!line!"=="" (
+                        if not defined trimmed_line (
                             echo.
                         ) else (
                             echo !line!
                         )
                     )
                 ) else (
-                    if "!line!"=="" (
+                    if not defined trimmed_line (
                         echo.
                     ) else (
                         echo !line!
@@ -167,6 +168,4 @@ if !port! == 22 (
 echo.
 
 pause
-exit 0
-:end
-endlocal
+exit /b
