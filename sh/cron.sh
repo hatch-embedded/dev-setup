@@ -30,7 +30,7 @@ ESCAPED_COMMAND=$(echo "$COMMAND" | sed 's/[&/\]/\\&/g')
 ESCAPED_FREQUENCY=$(echo "$FREQUENCY" | sed 's/[&/\]/\\&/g')
 
 # Prepare cron job line with log redirection
-CRON_JOB="$FREQUENCY $COMMAND >> $LOG_FILE 2>&1"
+CRON_JOB="$FREQUENCY CRON=1 $COMMAND >> $LOG_FILE 2>&1"
 
 # Check if there's an existing job with the same name
 if crontab -l 2>/dev/null | grep -q "# $JOB_NAME$"; then
