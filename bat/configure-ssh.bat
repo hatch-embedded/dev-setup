@@ -12,7 +12,7 @@ echo IP address or hostname:
 set /p ip=">"
 echo Port [22]:
 set /p port=">"
-echo Username [%USERNAME%]:
+echo Username:
 set /p user=">"
 
 echo.
@@ -22,8 +22,12 @@ if "!ip!"=="" (
     exit /b
 )
 
+if "!user!"=="" (
+    echo Invalid username
+    exit /b
+)
+
 if "!port!"=="" set port=22
-if "!user!"=="" set user=%USERNAME%
 
 @REM Ensure SSH key pair
 
