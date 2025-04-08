@@ -31,13 +31,13 @@ if "!port!"=="" set port=22
 
 @REM Ensure SSH key pair
 
-set ssh_dir=%userprofile%\.ssh
-set pubkey="%ssh_dir%\id_ed25519.pub"
-set privkey="%ssh_dir%\id_ed25519"
+set "ssh_dir=%userprofile%\.ssh"
+set "pubkey=!ssh_dir!\id_ed25519.pub"
+set "privkey=!ssh_dir!\id_ed25519"
 
-if not exist "%privkey%" (
+if not exist "!privkey!" (
     echo Generating new SSH key...
-    ssh-keygen -t ed25519 -f "%privkey%" -N ""
+    ssh-keygen -t ed25519 -f "!privkey!" -N ""
     if !errorlevel! neq 0 (
         echo Failed to generate private key.
         pause
@@ -45,9 +45,9 @@ if not exist "%privkey%" (
     )
 )
 
-if not exist "%pubkey%" (
+if not exist "!pubkey!" (
     echo Key public does not exist, generating now...
-    ssh-keygen -y -f "%privkey%" > "%pubkey%"
+    ssh-keygen -y -f "!privkey!" > "!pubkey!"
     if !errorlevel! neq 0 (
         echo Failed to generate public key.
         pause
@@ -55,7 +55,7 @@ if not exist "%pubkey%" (
     )
 )
 
-set ssh=ssh -i "%privkey%" -o BatchMode=yes -o StrictHostKeyChecking=no -p !port! !user!@!ip!
+set ssh=ssh -i "!privkey!" -o BatchMode=yes -o StrictHostKeyChecking=no -p !port! !user!@!ip!
 
 %ssh% "echo SSH key already configured." 2>NUL
 if !errorlevel! neq 0 (
@@ -72,15 +72,15 @@ if !errorlevel! neq 0 (
 
 @REM Update local ssh config file
 
-set config="!ssh_dir!\config"
+set "config=!ssh_dir!\config"
 set "host_entry=Host !ip!-!user!"
-set entry_exists="false"
+set entry_exists=false
 
 for /f "tokens=*" %%i in ('type "!config!" ^| findstr /C:"!host_entry!"') do (
-    set entry_exists="true"
+    set entry_exists=true
 )
 
-if !entry_exists! == "true" (
+if "!entry_exists!" == "true" (
     echo Updating '!config!' entry...
     set "in_entry=false"
     > "!config!.tmp" (
@@ -93,7 +93,7 @@ if !entry_exists! == "true" (
                 echo     Port !port!
                 echo     User !user!
                 echo     AddKeysToAgent yes
-                echo     IdentityFile !privkey!
+                echo     IdentityFile "!privkey!"
                 set "in_entry=true"
             ) else (
                 if "!in_entry!"=="true" (
@@ -128,7 +128,7 @@ if !entry_exists! == "true" (
         echo     Port !port!
         echo     User !user!
         echo     AddKeysToAgent yes
-        echo     IdentityFile !privkey!
+        echo     IdentityFile "!privkey!"
     )
     echo Entry added successfully
 )
@@ -164,7 +164,7 @@ if !errorlevel! neq 0 (
 
 echo.
 echo SSH configuration complete. Connect using the following command:
-if !port! == 22 (
+if "!port!" == 22 (
     echo    ssh !user!@!ip!
 ) else (
     echo    ssh !user!@!ip! -p !port!
