@@ -35,6 +35,6 @@ if crontab -l 2>/dev/null | grep -q "# $JOB_NAME$"; then
     echo "Updated cron job: $JOB_NAME"
 else
     # No job found, adding it
-    (crontab -l 2>/dev/null; echo $ENTRY) | crontab -
+    (crontab -l 2>/dev/null; echo "$ENTRY") | crontab -
     echo "Added new cron job: $JOB_NAME"
 fi
