@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-VERSION="2.0"
+VERSION="2.1"
 HOST="https://hatch-embedded.github.io/dev-setup"
 SH="$HOME/sh"
 REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
