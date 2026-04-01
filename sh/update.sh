@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 CUSTOM_LOCK="/tmp/update_script.lock"
 
-if [ -n "$CRON" ] && ! sudo -n true 2>/dev/null; then
+if [ -n "${CRON:-}" ] && ! sudo -n true 2>/dev/null; then
     echo "This script requires passwordless sudo to run while in cron context."
     exit 1
 fi
@@ -34,11 +35,11 @@ wait_for_locks
 
 echo "Updating system..."
 
-sudo apt-get -qq update -u -y --allow-releaseinfo-change
+sudo apt-get -qq update -y --allow-releaseinfo-change
 sudo apt-get -qq --fix-broken install
 sudo dpkg --configure -a
 sudo apt-get -qq full-upgrade -y
-sudo apt-get -qq clean -y
+sudo apt-get -qq clean
 sudo apt-get -qq --purge autoremove -y
 sudo apt-get -qq autoclean -y
 # sudo python3 -m pip install --upgrade pip > /dev/null 2>&1

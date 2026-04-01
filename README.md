@@ -27,3 +27,19 @@ chmod +x configure.sh
 Answer the prompts and follow the instructions until the script exits successfully.
 
 When finished, feel free to `rm configure.sh`.
+
+## Windows SSH Client Setup
+
+At the end of `./configure.sh`, a one-line PowerShell command is printed.
+
+Copy that command and paste it into a PowerShell terminal on your Windows workstation. It will:
+
+- Download and execute `win/configure_ssh.ps1` directly from this repository (in-memory).
+- Pass ip and user automatically.
+- Configure SSH key-based access and local SSH client settings.
+
+If needed, you can also run the script manually:
+
+```powershell
+$ip="<ip>"; $user="<user>"; irm https://hatch-embedded.github.io/dev-setup/win/configure_ssh.ps1 | iex
+```

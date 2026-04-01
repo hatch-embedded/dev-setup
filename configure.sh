@@ -1,10 +1,33 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
+VERSION="2.0"
 HOST="https://hatch-embedded.github.io/dev-setup"
 SH="$HOME/sh"
-REBOOT_PENDING=0
+REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
 
 # Functions
+
+mark_reboot() {
+    touch "$REBOOT_FILE"
+}
+
+reboot_pending() {
+    test -f "$REBOOT_FILE"
+}
+
+user() {
+    local X="${SUDO_USER:-${LOGNAME:-${USER:-}}}"
+
+    if [ -z "$X" ] || ! id -u "$X" >/dev/null 2>&1; then
+        X="$(logname 2>/dev/null || true)"
+    fi
+
+    if [ -z "$X" ] || ! id -u "$X" >/dev/null 2>&1; then
+        X="$(id -un)"
+    fi
+
+    echo "$X"
+}
 
 prompt_continue() {
     echo ""
@@ -14,13 +37,27 @@ prompt_continue() {
 }
 
 prompt_yes_no() {
-    local PROMPT=$1
+    local DEFAULT_RESPONSE="y" # default "default" response
+    local PROMPT
     local RESPONSE
 
-    echo "$PROMPT"
-    read -p "> " RESPONSE
+    case "${1:-}" in
+        --default-no)
+            DEFAULT_RESPONSE="n"
+            shift
+            ;;
+        --default-yes)
+            DEFAULT_RESPONSE="y"
+            shift
+            ;;
+    esac
 
-    RESPONSE=${RESPONSE:-Y}
+    PROMPT="$1"
+
+    echo "$PROMPT"
+    read -r -p "> " RESPONSE
+
+    RESPONSE=${RESPONSE:-$DEFAULT_RESPONSE}
     RESPONSE=$(echo "$RESPONSE" | tr '[:upper:]' '[:lower:]')
 
     if [[ "$RESPONSE" == "y" ]]; then
@@ -30,85 +67,151 @@ prompt_yes_no() {
     fi
 }
 
-download_scripts() {
-    local FILENAMES=("update.sh" "cron.sh")
-
-    echo "Fetching setup scripts..."
-    mkdir -p $SH && cd $SH
-    for FILENAME in "${FILENAMES[@]}"; do
-        FILEPATH=$SH/$FILENAME
-        wget -nv -N $HOST/sh/$FILENAME
-        chmod +x $FILEPATH
-    done
-}
-
-update () {
-    $SH/update.sh
-}
-
 enable_passwordless_sudo() {
     local LINE='%sudo ALL=(ALL) NOPASSWD: ALL'
     local FILEPATH='/etc/sudoers'
 
-    if sudo grep -xsqF "$LINE" "$FILEPATH"; then
-        echo "Passwordless sudo: OK"
-        return 0 # already passwordless
+    if ! sudo grep -xsqF "$LINE" "$FILEPATH"; then
+        echo "$LINE" | sudo tee -a "$FILEPATH" >/dev/null
     fi
 
-    echo "$LINE" | sudo tee -a "$FILEPATH"
-    echo "Passwordless sudo: OK"
+    echo "✅ | ENABLE passwordless sudo"
 }
 
-install_packages() {
-    local SYS_PKG="ufw ca-certificates gnupg"
-    local UTIL_PKG="wget curl rsync openssh-server"
-    local DEV_PKG="git cmake ccache"
-    local PYTHON_PKG="python3 python3-full python3-venv python3-virtualenv python3-setuptools python3-pip python-is-python3"
-    sudo apt-get install -qq -m -y $SYS_PKG $UTIL_PKG $DEV_PKG $PYTHON_PKG
+enable_sudoless_serial_port() {
+    if ! groups "$(user)" | grep -qw dialout; then
+        sudo usermod -a -G dialout "$(user)"
+        mark_reboot
+    fi
 
-    echo ""
-    echo "Common packages installation complete"
+    echo "✅ | ENABLE sudoless serial port access"
 }
 
+download_scripts() {
+    local FILENAMES=("update.sh" "cron.sh")
+    local FILEPATH
+
+    mkdir -p "$SH"
+    cd "$SH"
+    for FILENAME in "${FILENAMES[@]}"; do
+        FILEPATH="$SH/$FILENAME"
+        wget -qN "$HOST/sh/$FILENAME"
+        chmod +x "$FILEPATH"
+    done
+    cd - >/dev/null
+
+    echo "✅ | INSTALL ~/sh/ scripts"
+}
+
+apt_update() {
+    "$SH/update.sh" > /dev/null
+}
+
+apt_install() {
+    sudo apt-get -qqfy install "$@"
+}
+
+apt_install_common() {
+    local SYS_PKG=(ufw ca-certificates gnupg)
+    local UTIL_PKG=(wget curl rsync openssh-server)
+    local DEV_PKG=(git cmake ccache)
+    local PYTHON_PKG=(python3 python3-full python3-venv python3-virtualenv python3-setuptools python3-pip python-is-python3)
+
+    apt_update
+    apt_install "${SYS_PKG[@]}" "${UTIL_PKG[@]}" "${DEV_PKG[@]}" "${PYTHON_PKG[@]}"
+
+    echo "✅ | INSTALL common packages"
+}
+
+install_ssh_server() {
+    sudo ufw allow ssh >/dev/null
+    sudo systemctl enable ssh --now >/dev/null 2>&1
+    echo "✅ | INSTALL ssh server"
+}
+
+# Check https://docs.docker.com/engine/install/ for updates
 install_docker() {
-    # Check https://docs.docker.com/engine/install/debian/#installation-methods for updates
-    sudo install -m 0755 -d /etc/apt/keyrings
-    sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    # Determine OS
+    . /etc/os-release
 
-    echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
-    $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    case "${ID:-}" in
+        ubuntu)
+            repo_os="ubuntu"
+            repo_codename="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
+            ;;
+        debian)
+            repo_os="debian"
+            repo_codename="${VERSION_CODENAME:-}"
+            ;;
+        *)
+            echo "Unsupported distribution: ${ID:-unknown}" >&2
+            return 1
+            ;;
+    esac
 
-    update
-
-    sudo apt-get install -qq -m -y docker docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    
-    if groups $(logname) | grep -qw docker; then
-        echo "docker group: OK" 
-    else
-        echo "Adding user to docker group..."
-        sudo usermod -a -G docker $(logname)
-
-        echo "docker group: OK"
-        echo "System restart via is required before you can use docker without sudo."
-        REBOOT_PENDING=1
+    if [ -z "${repo_codename}" ]; then
+        echo "Could not determine distribution codename" >&2
+        return 1
     fi
 
-    sudo docker run hello-world
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL "https://download.docker.com/linux/${repo_os}/gpg" -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/${repo_os}
+Suites: ${repo_codename}
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
 
-    echo "Docker: OK"
+    # Remove legacy one-line format repo to prevent duplicate apt targets.
+    sudo rm -f /etc/apt/sources.list.d/docker.list
+
+    apt_update
+    apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+    if ! groups "$(user)" | grep -qw docker; then
+        sudo usermod -a -G docker "$(user)"
+        mark_reboot
+    fi
+
+    sudo docker --version > /dev/null
+    echo "✅ | INSTALL Docker"
+}
+
+install_claude() {
+    local BIN_DIR="$HOME/.local/bin"
+    local BASHRC="$HOME/.bashrc"
+    local PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
+
+    if ! "$BIN_DIR/claude" --version >/dev/null; then
+        # https://code.claude.com/docs/en/setup
+        curl -fsSL https://claude.ai/install.sh | bash >/dev/null
+    fi
+
+    touch "$BASHRC"
+    if ! grep -Fqx "$PATH_LINE" "$BASHRC"; then
+        echo "$PATH_LINE" >> "$BASHRC"
+        mark_reboot
+    fi
+
+    echo "✅ | INSTALL Claude Code"
+}
+
+schedule_updates() {
+    "$SH/cron.sh" "update" "$SH/update.sh" "0 3 * * 1" >/dev/null
+    echo "✅ | SCHEDULE update cron job"
 }
 
 update_firmware() {
     # Add firmware to apt sources
     local SOURCES_LIST="/etc/apt/sources.list"
     local BACKUP_FILE="/etc/apt/sources.list.bak"
-    local TAGS=("contrib" "non-free" "non-free-firmware")
 
     if [ ! -f "$BACKUP_FILE" ]; then
-        sudo cp $SOURCES_LIST $BACKUP_FILE
+        sudo cp "$SOURCES_LIST" "$BACKUP_FILE"
     fi
 
     # Process each line in sources.list
@@ -120,15 +223,15 @@ update_firmware() {
 
         new_line="$line"
 
-        if ! [[ "$line" =~ contrib ]]; then
+        if ! [[ " $line " =~ [[:space:]]contrib[[:space:]] ]]; then
             new_line="$new_line contrib"
         fi
 
-        if ! [[ "$line" =~ non-free[^-] ]]; then
+        if ! [[ " $line " =~ [[:space:]]non-free[[:space:]] ]]; then
             new_line="$new_line non-free"
         fi
 
-        if ! [[ "$line" =~ non-free-firmware ]]; then
+        if ! [[ " $line " =~ [[:space:]]non-free-firmware[[:space:]] ]]; then
             new_line="$new_line non-free-firmware"
         fi
 
@@ -138,8 +241,8 @@ update_firmware() {
     # Replace the original file with the modified one
     sudo mv /etc/apt/sources.list.tmp /etc/apt/sources.list
 
-    update
-    sudo apt-get install -qq -m -y fwupd firmware-linux-nonfree
+    apt_update
+    apt_install fwupd firmware-linux-nonfree
 
     # Reload fwupd service to ensure it's up-to-date
     sudo systemctl daemon-reload
@@ -152,49 +255,31 @@ update_firmware() {
     # Check for available updates
     sudo fwupdmgr get-updates || :
     sudo fwupdmgr update || :
-    echo "Done checking for firmware updates. A reboot may or may not be nececssary"
-}
-
-update_cron_job() {
-    $SH/cron.sh "update" "$SH/update.sh" "0 3 * * 1"
-    echo System updates will be installed/applied every Monday at 3am
-}
-
-configure_ssh() {
-    IP=$(hostname -I | awk '{print $1}')
-    MAC=$(ip -br link | grep $(ip -br addr show | awk -v ip="$IP" '$0 ~ ip {print $1}') | awk '{print $3}')
-
-    sudo ufw allow ssh
-    sudo systemctl enable ssh --now
-
-    echo ""
-    echo ""
-    echo "SSH server enabled and running. Please run $HOST/bat/configure-ssh.bat on your Windows PC for easy one-time SSH setup."
-    echo ""
-    echo "You should also consider setting up a static DHCP rule for $MAC to $IP so this does not change. This can be done in your router's web portal. If you would like to access this machine from an external network, it's recommended you create a port forward rule from a random external port to $IP:22."
-    echo ""
+    echo "Done checking for firmware updates. A reboot may or may not be necessary."
 }
 
 configure_git() {
-    local SSH_DIR=$HOME/.ssh
-    local SSH_CONFIG=$SSH_DIR/config
-    local SSH_HOSTS=$SSH_DIR/known_hosts
-    local PRIVKEY=$SSH_DIR/id_ed25519
-    local PUBKEY=$PRIVKEY.pub
-    local GIT_USER=$(git config --global user.name)
-    local GIT_EMAIL=$(git config --global user.email)
+    local SSH_DIR="$HOME/.ssh"
+    local SSH_CONFIG="$SSH_DIR/config"
+    local SSH_HOSTS="$SSH_DIR/known_hosts"
+    local PRIVKEY="$SSH_DIR/id_ed25519"
+    local PUBKEY="$PRIVKEY.pub"
+    local GIT_USER
+    GIT_USER=$(git config --global user.name 2>/dev/null || true)
+    local GIT_EMAIL
+    GIT_EMAIL=$(git config --global user.email 2>/dev/null || true)
     local ESC_GIT_USER
     local ESC_GIT_EMAIL
     local ESC_PRIVKEY
-    local EMAIL
+    local EMAIL=""
     local USER
     local ENTRY
     local ERROR_LEVEL
 
-    mkdir -p $HOME/git
-    mkdir -p $SSH_DIR
-    test -f $SSH_CONFIG || touch $SSH_CONFIG
-    test -f $SSH_HOSTS || touch $SSH_HOSTS
+    mkdir -p "$HOME/git"
+    mkdir -p "$SSH_DIR"
+    test -f "$SSH_CONFIG" || touch "$SSH_CONFIG"
+    test -f "$SSH_HOSTS" || touch "$SSH_HOSTS"
 
     # Set global user/email config
 
@@ -214,14 +299,12 @@ configure_git() {
         GIT_EMAIL=$(git config --global user.email)
     fi
 
-    echo "git config: OK"
-
     # Generate SSH key if needed
 
-    if [ ! -f $PRIVKEY ]; then
-        ssh-keygen -t ed25519 -f $PRIVKEY -N "" -C "$GIT_EMAIL"
+    if [ ! -f "$PRIVKEY" ]; then
+        ssh-keygen -t ed25519 -f "$PRIVKEY" -N "" -C "$GIT_EMAIL"
         eval "$(ssh-agent -s)"
-        ssh-add $PRIVKEY
+        ssh-add "$PRIVKEY"
     fi
 
     # Update ssh config file
@@ -231,7 +314,7 @@ configure_git() {
     ESC_GIT_EMAIL=$(echo "$GIT_EMAIL" | sed 's/[]\/$*.^[]/\\&/g')
     ESC_PRIVKEY=$(echo "$PRIVKEY" | sed 's/[]\/$*.^[]/\\&/g')
 
-    if ! grep -q "# $ESC_GIT_USER|$ESC_GIT_EMAIL" $SSH_CONFIG; then
+    if ! grep -q "# $ESC_GIT_USER|$ESC_GIT_EMAIL" "$SSH_CONFIG"; then
         ENTRY="# $GIT_USER|$GIT_EMAIL
 Host github.com
 HostName github.com
@@ -239,62 +322,53 @@ User git
 IdentityFile $PRIVKEY"
 
         # add github to known hosts
-        ssh-keygen -R github.com > /dev/null 2&>1 || :
-        ssh-keyscan -H github.com >> $SSH_HOSTS
-        rm -f $SSH_HOSTS.old*
+        ssh-keygen -R github.com >/dev/null 2>&1 || :
+        ssh-keyscan -H github.com >> "$SSH_HOSTS"
+        rm -f "$SSH_HOSTS".old*
 
-        echo "$ENTRY" >> $SSH_CONFIG
-        echo "Entry added to $SSH_CONFIG."
+        echo "$ENTRY" >> "$SSH_CONFIG"
     fi
 
-    # Test the key
-    set +e
-    ssh -T git@github.com 2>&1
-    ERROR_LEVEL=$?
-    set -e
-
-    if [ $ERROR_LEVEL -eq 1 ]; then
-        echo "git ssh key: OK"
-    elif [ $ERROR_LEVEL -eq 255 ]; then
+    # Test the key (exit 1 = authenticated, GitHub just denies shell access)
+    local rc=0
+    ssh -T git@github.com >/dev/null 2>&1 || rc=$?
+    if ! [ "$rc" -eq 1 ]; then
         echo ""
         echo ""
         echo "Below is your SSH key for git authentication. Please copy it and add it to your GitHub account (https://github.com/settings/keys) before continuing."
         echo ""
-        cat $PUBKEY
+        cat "$PUBKEY"
 
         prompt_continue
 
-        # Test again
-        set +e
-        ssh -T git@github.com 2>&1
-        ERROR_LEVEL=$?
-        set -e
+        rc=0
+        ssh -T git@github.com >/dev/null 2>&1 || rc=$?
 
-        if [ $ERROR_LEVEL -eq 1 ]; then
-            echo "git ssh key: OK"
-        elif [ $ERROR_LEVEL -eq 255 ]; then
+        if [ "$rc" -ne 1 ]; then
             echo "Failed to authenticate as $GIT_USER ($GIT_EMAIL) using $PRIVKEY. Please try again."
             return 1
-        else
-            echo "An unexpected error occurred."
-            return 1
         fi
-    else
-        echo "An unexpected error occurred."
-        return 1
     fi
+
+    echo "✅ | CONFIGURE git"
 }
 
-add_user_to_dialout() {
-    if groups $(logname) | grep -qw dialout; then
-        echo "dialout group: OK"
-    else
-        sudo usermod -a -G dialout $(logname)
+setup_rest_plus() {
+    local GIT_DIR="$HOME/git"
+    local REPO_DIR="$GIT_DIR/rest_plus"
+    mkdir -p "$GIT_DIR"
 
-        echo ""
-        echo "User added to dialout group. System restart is required before you can use serial devices on this machine."
-        REBOOT_PENDING=1
+    if [ ! -d "$REPO_DIR" ]; then
+        git clone -q git@github.com:hatch-baby/rest_plus.git "$REPO_DIR"
+    else
+        git -C "$REPO_DIR" pull -q || true
     fi
+
+    echo ""
+    echo "Setting up 'rest_plus'..."
+
+    "$REPO_DIR/tools/setup/setup.sh"
+    echo "✅ | SETUP hatch-baby/rest_plus"
 }
 
 uninstall_gui() {
@@ -303,68 +377,65 @@ uninstall_gui() {
     if systemctl is-active --quiet gdm3; then
         sudo systemctl stop gdm3
         sudo systemctl disable gdm3
-        REBOOT_PENDING=1
+        mark_reboot
     fi
 
-    sudo apt-get remove -qq -y --purge gnome-core kde-plasma-desktop xfce4 lxde
+    sudo apt-get remove -qqy --purge gnome-core kde-plasma-desktop xfce4 lxde || true
 
-    echo ""
-    echo "GUI Uninstalled - Restart to apply changes"
-}
-
-setup_rest_plus() {
-    echo ""
-    echo "Cloning 'rest_plus'..."
-
-    mkdir -p $HOME/git
-    cd $HOME/git
-    git clone --progress --recursive git@github.com:hatch-baby/rest_plus.git
-    
-    echo ""
-    echo "Setting up 'rest_plus'..."
-
-    $HOME/git/rest_plus/tools/setup/setup.sh
+    echo "✅ | UNINSTALL Desktop"
 }
 
 echo ""
-echo "Welcome to the interactive setup script for configuring a fresh Linux install to be suited for embedded firmware development at Hatch. This was tested on Debian 12 but was designed to be as portable as possible."
-
+echo "========== Hatch dev-setup v$VERSION =========="
 echo ""
-echo "NOTE: This setup script is designed to be idempotent, meaning it may be restarted or executed multiple times without consequence."
 
-prompt_continue
-
-download_scripts
 enable_passwordless_sudo
-update
-install_packages
+enable_sudoless_serial_port
+download_scripts
+apt_install_common
+install_ssh_server
 install_docker
-configure_ssh
-prompt_continue
+install_claude
+schedule_updates
 configure_git
-add_user_to_dialout
-
-update_cron_job
-
-echo ""
-if prompt_yes_no "Would you like to disable and uninstall all desktop components from your system (only do this if you are going to use this machine as a headless server) [Y/n]?"; then
-    uninstall_gui
-fi
 
 if [ ! -d "$HOME/git/rest_plus" ]; then
-    echo ""
-    setup_rest_plus
+    if prompt_yes_no "Would you like to clone and setup hatch-baby/rest_plus? [Y/n]"; then
+        setup_rest_plus
+    fi
 fi
 
-echo ""
-echo "Configuration complete! Please see the firmware repo for setup steps regarding building and flashing product firmware."
-
-if [ $REBOOT_PENDING -eq 1 ]; then
+if [ -n "${SSH_CONNECTION:-}" ] && [ "$(systemctl get-default)" != "multi-user.target" ]; then
     echo ""
-    if prompt_yes_no "System restart is required for some changes to take effect. Would you like to do this now [Y/n]?"; then
+    if prompt_yes_no --default-no "Disable and uninstall all desktop components from your system (only do this if you are going to use this machine as a headless server) [y/N]?"; then
+        uninstall_gui
+    fi
+fi
+
+IP=$(hostname -I | awk '{print $1}')
+MAC=$(ip -br link | grep "$(ip -br addr show | awk -v ip="$IP" '$0 ~ ip {print $1}')" | awk '{print $3}')
+
+echo ""
+echo "======== Configuration Complete! ========"
+echo ""
+echo "Here are some things you might want to do next:"
+echo ""
+echo "  1. Read the hatch-baby/rest_plus documentation for build/flash/monitor instructions."
+echo ""
+echo "  2. Setup remote SSH access from a Windows machine. Use this PowerShell command to get started:"
+echo ""
+echo "\$ip='$IP';\$user='$(user)'; irm $HOST/win/configure_ssh.ps1 | iex"
+echo ""
+echo "  3. Setup a static DHCP rule in your router to permanently assign $IP to $MAC"
+
+if reboot_pending; then
+    echo ""
+    if prompt_yes_no "System reboot is required for some changes to take effect. Would you like to do this now [Y/n]?"; then
+        rm -f "$REBOOT_FILE"
         sudo reboot
     fi
 fi
 
-prompt_continue
+echo ""
+echo "Goodbye."
 echo ""

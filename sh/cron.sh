@@ -1,5 +1,5 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Validate number of arguments
 
@@ -8,9 +8,9 @@ if [ "$#" -ne 3 ]; then
     exit 1
 fi
 
-JOB_NAME=$1
-COMMAND=$2
-FREQUENCY=$3
+JOB_NAME="$1"
+COMMAND="$2"
+FREQUENCY="$3"
 LOG_DIR="$HOME/.logs"
 LOG_FILE="$LOG_DIR/$JOB_NAME.log"
 
