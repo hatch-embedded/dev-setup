@@ -18,10 +18,8 @@ You will be prompted to log back in afterwards.
 3. Download and run the configuration script from this repository:
 
 ```sh
-sudo apt install -y wget
-wget -N https://hatch-embedded.github.io/dev-setup/configure.sh
-chmod +x configure.sh
-./configure.sh
+sudo apt install -y curl
+curl -fsSL https://hatch-embedded.github.io/dev-setup/configure.sh | bash
 ```
 
 Answer the prompts and follow the instructions until the script exits successfully.

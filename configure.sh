@@ -7,6 +7,10 @@ REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
 
 # Functions
 
+input() {
+    read "$@" </dev/tty
+}
+
 mark_reboot() {
     touch "$REBOOT_FILE"
 }
@@ -32,7 +36,7 @@ user() {
 prompt_continue() {
     echo ""
     echo "Press any key to continue."
-    read -n 1 -s
+    input -n 1 -s
     echo ""
 }
 
@@ -55,7 +59,7 @@ prompt_yes_no() {
     PROMPT="$1"
 
     echo "$PROMPT"
-    read -r -p "> " RESPONSE
+    input -r -p "> " RESPONSE
 
     RESPONSE=${RESPONSE:-$DEFAULT_RESPONSE}
     RESPONSE=$(echo "$RESPONSE" | tr '[:upper:]' '[:lower:]')
@@ -186,7 +190,7 @@ install_claude() {
     local BASHRC="$HOME/.bashrc"
     local PATH_LINE="export PATH=\"$BIN_DIR:\$PATH\""
 
-    if ! "$BIN_DIR/claude" --version >/dev/null; then
+    if ! "$BIN_DIR/claude" --version >/dev/null 2>&1; then
         # https://code.claude.com/docs/en/setup
         curl -fsSL https://claude.ai/install.sh | bash >/dev/null
     fi
@@ -285,7 +289,7 @@ configure_git() {
 
     if [ -z "$GIT_USER" ]; then
         echo "Enter your git username:"
-        read -p "> " USER
+        input -p "> " USER
         git config --global user.name "$USER"
         GIT_USER=$(git config --global user.name)
     fi
@@ -293,7 +297,7 @@ configure_git() {
     if [ -z "$GIT_EMAIL" ]; then
         if [ -z "$EMAIL" ]; then
             echo "Enter your git email:"
-            read -p "> " EMAIL
+            input -p "> " EMAIL
         fi
         git config --global user.email "$EMAIL"
         GIT_EMAIL=$(git config --global user.email)
