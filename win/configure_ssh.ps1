@@ -29,7 +29,7 @@ function Install-SshPublicKey {
 
     $pubKey = (Get-Content -Path $PublicKeyPath -Raw).Trim()
 
-    & ssh -o StrictHostKeyChecking=accept-new -p $Port $Destination @"
+    & ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no -p $Port $Destination @"
 mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qxF "$pubKey" ~/.ssh/authorized_keys || echo "$pubKey" >> ~/.ssh/authorized_keys
 "@
     if ($LASTEXITCODE -ne 0) { throw "Failed to install SSH public key on the remote server." }
