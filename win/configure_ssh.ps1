@@ -95,14 +95,14 @@ Write-Host "Configures this Windows machine to connect to a remote SSH server."
 Write-Host ""
 
 # Collect connection details (pre-set $ip/$user/$port variables are used if available)
-$Ip   = if ((Get-Variable ip   -ErrorAction SilentlyContinue).Value) { "$ip" }   else { Read-Host "IP address or hostname" }
-$User = if ((Get-Variable user -ErrorAction SilentlyContinue).Value) { "$user" } else { Read-Host "Username" }
+$Ip   = if (Get-Variable h -ValueOnly -ErrorAction SilentlyContinue) { "$h" }   else { Read-Host "IP address or hostname" }
+$User = if (Get-Variable u -ValueOnly -ErrorAction SilentlyContinue) { "$u" } else { Read-Host "Username" }
 $Port = 22
 
-$presetPort = (Get-Variable port -ErrorAction SilentlyContinue).Value
+$presetPort = Get-Variable p -ValueOnly -ErrorAction SilentlyContinue
 if ($presetPort -and "$presetPort".Trim() -ne "") {
     $Port = [int]"$presetPort"
-} elseif (-not (Get-Variable ip -ErrorAction SilentlyContinue).Value) {
+} elseif (-not (Get-Variable h -ValueOnly -ErrorAction SilentlyContinue)) {
     $portInput = Read-Host "Port [22]"
     if ($portInput -ne "") { $Port = [int]$portInput }
 }

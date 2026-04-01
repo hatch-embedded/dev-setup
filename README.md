@@ -1,15 +1,20 @@
 # Hatch Embedded Linux Setup Script
 
-This simple repository exists to provide our linux setup script from an easy to type public URL which can be fetched from a fresh linux install.
+This simple repository exists to provide our linux setup script from an easy to type public URL which can be fetched from a fresh linux install. Comprehensive documentation exists in the `rest_plus` repository, but in short...
+
+## Supported OS
+
+- Debian LTS/stable
+- Ubuntu LTS/stable
 
 ## Usage
 
-1. Boot into the OS and login with your user credentials created during installation.
+1. Boot into the machine and login with your user credentials created during installation.
 
 2. Give yourself permission to use `sudo` commands using the root password created during installation.
 
 ```sh
-su - -c 'usermod -aG sudo $(logname) && apt install -y sudo'
+su - -c 'usermod -aG sudo $USER && apt install -y sudo'
 exit
 ```
 
@@ -24,20 +29,26 @@ curl -fsSL https://hatch-embedded.github.io/dev-setup/configure.sh | bash
 
 Answer the prompts and follow the instructions until the script exits successfully.
 
-When finished, feel free to `rm configure.sh`.
-
 ## Windows SSH Client Setup
 
-At the end of `./configure.sh`, a one-line PowerShell command is printed.
+At the end of the configuration script, a one-line PowerShell command is printed. Execute that command in a PowerShell terminal on your Windows workstation to configure key-based SSH access to the freshly configured linux machine.
 
-Copy that command and paste it into a PowerShell terminal on your Windows workstation. It will:
+If needed, you can also run the script without the additional arguments:
 
-- Download and execute `win/configure_ssh.ps1` directly from this repository (in-memory).
-- Pass ip and user automatically.
-- Configure SSH key-based access and local SSH client settings.
+```ps1
+irm https://hatch-embedded.github.io/dev-setup/win/configure_ssh.ps1 | iex
+```
 
-If needed, you can also run the script manually:
+## Extra Arguments
 
-```powershell
-$ip="<ip>"; $user="<user>"; irm https://hatch-embedded.github.io/dev-setup/win/configure_ssh.ps1 | iex
+Run with extra arguments like so:
+
+```sh
+curl -fsSL https://hatch-embedded.github.io/dev-setup/configure.sh | bash -s -- <extra arguments here>
+```
+
+Here is a list of extra arguments
+
+```
+--uninstall-gui
 ```
