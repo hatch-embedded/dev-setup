@@ -474,7 +474,10 @@ echo "  $((NEXT_STEP++)). Setup a static DHCP rule in your router to permanently
 
 if [ "$HAS_GUI" = true ]; then
     echo ""
-    echo "  $((NEXT_STEP++)). Re-run this script with --uninstall-gui to remove the desktop environment"
+    echo "  $((NEXT_STEP++)). Uninstall the desktop enviornment by restarting the script with '--uninstall-gui' like so:"
+    echo ""
+    echo "curl -fsSL https://hatch-embedded.github.io/dev-setup/configure.sh | bash -s -- --uninstall-gui"
+    echo ""
 fi
 
 if reboot_pending; then
