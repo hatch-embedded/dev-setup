@@ -10,28 +10,23 @@ function Assert-CommandExists {
 
 function Invoke-SshCommand {
     param(
-        [Parameter(Mandatory)][string]$PrivateKey,
-        [Parameter(Mandatory)][string]$Destination,
-        [Parameter(Mandatory)][int]$Port,
+        [Parameter(Mandatory)][string[]]$SshOpts,
         [Parameter(Mandatory)][string]$Command
     )
 
-    & ssh -i $PrivateKey -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p $Port $Destination $Command *> $null
-    return $LASTEXITCODE -eq 0
+    & ssh @SshOpts $Command *> $null
+    return ($LASTEXITCODE -eq 0)
 }
 
 function Install-SshPublicKey {
     param(
         [Parameter(Mandatory)][string]$PublicKeyPath,
-        [Parameter(Mandatory)][string]$Destination,
-        [Parameter(Mandatory)][int]$Port
+        [Parameter(Mandatory)][string[]]$SshOpts
     )
 
     $pubKey = (Get-Content -Path $PublicKeyPath -Raw).Trim()
 
-    & ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no -p $Port $Destination @"
-mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qxF "$pubKey" ~/.ssh/authorized_keys || echo "$pubKey" >> ~/.ssh/authorized_keys
-"@
+    & ssh @SshOpts -o PubkeyAuthentication=no "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qxF '$pubKey' ~/.ssh/authorized_keys || echo '$pubKey' >> ~/.ssh/authorized_keys"
     if ($LASTEXITCODE -ne 0) { throw "Failed to install SSH public key on the remote server." }
 }
 
@@ -49,15 +44,15 @@ function Update-SshConfigEntry {
         New-Item -ItemType File -Path $ConfigPath -Force | Out-Null
     }
 
-    $existing = @(Get-Content -Path $ConfigPath -ErrorAction SilentlyContinue)
+    [string[]]$existing = @(Get-Content -Path $ConfigPath -ErrorAction SilentlyContinue)
 
-    $entry = @(
+    [string[]]$entry = @(
         "Host $HostName",
         "    HostName $Ip",
         "    Port $Port",
         "    User $User",
         "    AddKeysToAgent yes",
-        "    IdentityFile $IdentityFile"
+        "    IdentityFile `"$IdentityFile`""
     )
 
     $result = [System.Collections.Generic.List[string]]::new()
@@ -68,7 +63,9 @@ function Update-SshConfigEntry {
             $found = $true
             $result.AddRange($entry)
             $i++
-            while ($i -lt $existing.Count -and $existing[$i] -match '^\s+') { $i++ }
+            while ($i -lt $existing.Count -and $existing[$i] -match '^\s' -and $existing[$i].Trim() -ne "") { $i++ }
+            # Also skip trailing blank lines within the block
+            while ($i -lt $existing.Count -and $existing[$i].Trim() -eq "") { $i++ }
             $i--
             continue
         }
@@ -76,7 +73,7 @@ function Update-SshConfigEntry {
     }
 
     if (-not $found) {
-        if ($result.Count -gt 0 -and $result[-1] -ne "") { $result.Add("") }
+        if ($result.Count -gt 0 -and $result[$result.Count - 1] -ne "") { $result.Add("") }
         $result.AddRange($entry)
     }
 
@@ -86,7 +83,6 @@ function Update-SshConfigEntry {
 # --- Main ---
 
 Assert-CommandExists "ssh"
-Assert-CommandExists "ssh-keygen"
 
 Write-Host ""
 Write-Host "SSH Client Setup"
@@ -94,7 +90,7 @@ Write-Host "================"
 Write-Host "Configures this Windows machine to connect to a remote SSH server."
 Write-Host ""
 
-# Collect connection details (pre-set $ip/$user/$port variables are used if available)
+# Collect connection details (pre-set $h/$u/$p variables are used if available)
 $Ip   = if (Get-Variable h -ValueOnly -ErrorAction SilentlyContinue) { "$h" }   else { Read-Host "IP address or hostname" }
 $User = if (Get-Variable u -ValueOnly -ErrorAction SilentlyContinue) { "$u" } else { Read-Host "Username" }
 $Port = 22
@@ -121,26 +117,37 @@ $configPath = Join-Path $sshDir "config"
 
 New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
 
+# Shared SSH options
+$dest = "$User@$Ip"
+[string[]]$sshOpts = @(
+    '-i', $privateKey,
+    '-o', 'BatchMode=yes',
+    '-o', 'StrictHostKeyChecking=accept-new',
+    '-o', 'ConnectTimeout=10',
+    '-p', "$Port",
+    $dest
+)
+# Non-batch opts for interactive commands (key install, password prompts)
+[string[]]$sshInteractiveOpts = @(
+    '-o', 'StrictHostKeyChecking=accept-new',
+    '-o', 'ConnectTimeout=10',
+    '-p', "$Port",
+    $dest
+)
+
 # Generate key pair if needed
 if (-not (Test-Path $privateKey)) {
     Write-Host "Generating SSH key pair..."
-    & ssh-keygen -t ed25519 -f $privateKey -N ""
+    echo y | & ssh-keygen -t ed25519 -f $privateKey -q
     if ($LASTEXITCODE -ne 0) { throw "Failed to generate SSH key." }
 }
 
-if (-not (Test-Path $publicKey)) {
-    & ssh-keygen -y -f $privateKey | Set-Content -Path $publicKey -Encoding ascii
-    if ($LASTEXITCODE -ne 0) { throw "Failed to regenerate public key." }
-}
-
 # Install key on remote if not already authorized
-$dest = "$User@$Ip"
-
-if (-not (Invoke-SshCommand -PrivateKey $privateKey -Destination $dest -Port $Port -Command "true")) {
+if (-not (Invoke-SshCommand -SshOpts $sshOpts -Command "true")) {
     Write-Host "Copying SSH key to remote server..."
-    Install-SshPublicKey -PublicKeyPath $publicKey -Destination $dest -Port $Port
+    Install-SshPublicKey -PublicKeyPath $publicKey -SshOpts $sshInteractiveOpts
 
-    if (-not (Invoke-SshCommand -PrivateKey $privateKey -Destination $dest -Port $Port -Command "true")) {
+    if (-not (Invoke-SshCommand -SshOpts $sshOpts -Command "true")) {
         throw "Failed to verify SSH key installation."
     }
 }
@@ -149,17 +156,17 @@ Write-Host "SSH key authorized."
 
 # Update local SSH config
 $hostAlias = "$Ip-$User"
-Update-SshConfigEntry -ConfigPath $configPath -HostName $hostAlias -Ip $Ip -User $User -Port $Port -IdentityFile ($privateKey -replace "\\", "/")
+Update-SshConfigEntry -ConfigPath $configPath -HostName $hostAlias -Ip $Ip -User $User -Port $Port -IdentityFile $privateKey
 Write-Host "SSH config updated for host '$hostAlias'."
 
 # Offer to disable password auth
-$pwdDisabled = Invoke-SshCommand -PrivateKey $privateKey -Destination $dest -Port $Port `
-    -Command "grep -qE '^\s*PasswordAuthentication\s+no' /etc/ssh/sshd_config"
+$pwdDisabled = Invoke-SshCommand -SshOpts $sshOpts `
+    -Command "grep -qE '^[[:space:]]*PasswordAuthentication[[:space:]]+no' /etc/ssh/sshd_config"
 
 if (-not $pwdDisabled) {
     $r = Read-Host "Disable password-based auth for security? [Y/n]"
     if ($r -notmatch '^[nN]$') {
-        $ok = Invoke-SshCommand -PrivateKey $privateKey -Destination $dest -Port $Port `
+        $ok = Invoke-SshCommand -SshOpts $sshOpts `
             -Command "sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart ssh"
         Write-Host $(if ($ok) { "Password auth disabled." } else { "Failed to disable password auth." })
     }
@@ -169,11 +176,10 @@ if (-not $pwdDisabled) {
 
 # Done
 Write-Host ""
-$sshCmd = "ssh $User@$Ip" + $(if ($Port -ne 22) { " -p $Port" } else { "" })
-Write-Host "Done! Connect using: $sshCmd"
+Write-Host "Done! Connect using: ssh $hostAlias"
 Write-Host ""
 
 $r = Read-Host "Open SSH session now? [Y/n]"
 if ($r -notmatch '^[nN]$') {
-    & ssh -i $privateKey $dest -p $Port
+    & ssh $hostAlias
 }
