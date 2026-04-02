@@ -394,6 +394,8 @@ setup_rest_plus() {
     mkdir -p "$GIT_DIR"
 
     if [ ! -d "$REPO_DIR" ]; then
+        echo ""
+        echo "Cloning 'rest_plus'..."
         git clone -q git@github.com:hatch-baby/rest_plus.git "$REPO_DIR"
     else
         git -C "$REPO_DIR" pull -q || true
