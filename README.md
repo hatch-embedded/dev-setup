@@ -33,13 +33,13 @@ Answer the prompts and follow the instructions until the script exits successful
 
 At the end of the configuration script, a one-line PowerShell command is printed. Execute that command in a PowerShell terminal on your Windows workstation to configure key-based SSH access to the freshly configured linux machine.
 
-If needed, you can also run the script without the additional arguments:
+You may also run the script without arguments and enter the arguments at runtime:
 
 ```ps1
 irm https://hatch-embedded.github.io/dev-setup/win/configure_ssh.ps1 | iex
 ```
 
-## Extra Arguments
+### Extra Arguments
 
 Run with extra arguments like so:
 
