@@ -16,9 +16,10 @@ LOG_FILE="$LOG_DIR/$JOB_NAME.log"
 
 # Ensure crontab for current user
 if ! crontab -l &>/dev/null; then
-    echo "# Empty crontab created on $(date)" > /tmp/crontab$$
-    crontab /tmp/crontab$$
-    rm -f /tmp/crontab$$
+    TMPFILE=$(mktemp /tmp/crontab.XXXXXX)
+    echo "# Empty crontab created on $(date)" > "$TMPFILE"
+    crontab "$TMPFILE"
+    rm -f "$TMPFILE"
     echo "Crontab created"
 fi
 

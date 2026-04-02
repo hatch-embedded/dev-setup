@@ -14,7 +14,7 @@ This simple repository exists to provide our linux setup script from an easy to 
 2. Give yourself permission to use `sudo` commands using the root password created during installation.
 
 ```sh
-su - -c 'usermod -aG sudo $USER && apt install -y sudo'
+su - -c "usermod -aG sudo $(logname) && apt install -y sudo"
 exit
 ```
 
@@ -54,5 +54,5 @@ Here are the supported extra arguments:
     Skips the prompts and error check for setting up SSH access to github.com
 
 --uninstall-gui
-    At the end of configuration, prompts the user to disable and uninstall the desktop enviornment
+    At the end of configuration, prompts the user to disable and uninstall the desktop environment
 ```

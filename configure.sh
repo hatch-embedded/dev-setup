@@ -20,12 +20,19 @@ for arg in "$@"; do
 done
 
 HAS_GUI=false
-if [ "$(systemctl get-default)" != "multi-user.target" ]; then
-    HAS_GUI=true
+if command -v systemctl >/dev/null 2>&1; then
+    if [ "$(systemctl get-default 2>/dev/null || echo multi-user.target)" != "multi-user.target" ]; then
+        HAS_GUI=true
+    fi
 fi
 
-IP=$(hostname -I | awk '{print $1}')
-MAC=$(ip -br link | grep "$(ip -br addr show | awk -v ip="$IP" '$0 ~ ip {print $1}')" | awk '{print $3}')
+IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ -n "$IP" ]; then
+    IFACE=$(ip -br addr show 2>/dev/null | awk -v ip="$IP" '$0 ~ ip {print $1; exit}')
+    MAC=$(ip -br link show "$IFACE" 2>/dev/null | awk '{print $3}')
+fi
+IP="${IP:-<unknown>}"
+MAC="${MAC:-<unknown>}"
 
 # Functions #
 
@@ -83,8 +90,8 @@ prompt_yes_no() {
     echo "$PROMPT"
     input -r -p "> " RESPONSE
 
-    RESPONSE=${RESPONSE:-$DEFAULT_RESPONSE}
-    RESPONSE=$(echo "$RESPONSE" | tr '[:upper:]' '[:lower:]')
+    RESPONSE="${RESPONSE:-$DEFAULT_RESPONSE}"
+    RESPONSE="${RESPONSE,,}"
 
     if [[ "$RESPONSE" == "y" ]]; then
         return 0
@@ -93,9 +100,7 @@ prompt_yes_no() {
     fi
 }
 
-win_ssh_setup_cmd() {    
-    local IP=$(hostname -I | awk '{print $1}')
-    local MAC=$(ip -br link | grep "$(ip -br addr show | awk -v ip="$IP" '$0 ~ ip {print $1}')" | awk '{print $3}')
+win_ssh_setup_cmd() {
     echo "\$h='$IP';\$u='$(user)';\$p=22; irm $HOST/win/configure_ssh.ps1 | iex"
 }
 
@@ -124,13 +129,17 @@ download_scripts() {
     local FILEPATH
 
     mkdir -p "$SH"
-    cd "$SH"
     for FILENAME in "${FILENAMES[@]}"; do
         FILEPATH="$SH/$FILENAME"
-        wget -qN "$HOST/sh/$FILENAME"
+        if ! wget -qN --tries=3 --timeout=15 -O "$FILEPATH" "$HOST/sh/$FILENAME"; then
+            if [ ! -f "$FILEPATH" ]; then
+                echo "ERROR: Failed to download $FILENAME" >&2
+                return 1
+            fi
+            echo "WARNING: Using previously downloaded $FILENAME" >&2
+        fi
         chmod +x "$FILEPATH"
     done
-    cd - >/dev/null
 
     echo "✅ | INSTALL ~/sh/ scripts"
 }
@@ -147,7 +156,12 @@ apt_install_common() {
     local SYS_PKG=(ufw ca-certificates gnupg)
     local UTIL_PKG=(wget curl rsync openssh-server)
     local DEV_PKG=(git cmake ccache)
-    local PYTHON_PKG=(python3 python3-full python3-venv python3-virtualenv python3-setuptools python3-pip python-is-python3)
+    local PYTHON_PKG=(python3 python3-full python3-venv python3-virtualenv python3-setuptools python3-pip)
+
+    # python-is-python3 is not available on Debian 11 (bullseye)
+    if apt-cache show python-is-python3 >/dev/null 2>&1; then
+        PYTHON_PKG+=(python-is-python3)
+    fi
 
     apt_update
     apt_install "${SYS_PKG[@]}" "${UTIL_PKG[@]}" "${DEV_PKG[@]}" "${PYTHON_PKG[@]}"
@@ -163,36 +177,31 @@ install_ssh_server() {
 
 # Check https://docs.docker.com/engine/install/ for updates
 install_docker() {
-    # Determine OS
-    . /etc/os-release
+    # Determine OS (read in subshell to avoid polluting global variables like VERSION)
+    local REPO_OS REPO_CODENAME
+    REPO_OS=$(. /etc/os-release && echo "${ID:-}")
+    REPO_CODENAME=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}")
 
-    case "${ID:-}" in
-        ubuntu)
-            repo_os="ubuntu"
-            repo_codename="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
-            ;;
-        debian)
-            repo_os="debian"
-            repo_codename="${VERSION_CODENAME:-}"
-            ;;
+    case "${REPO_OS}" in
+        ubuntu|debian) ;;
         *)
-            echo "Unsupported distribution: ${ID:-unknown}" >&2
+            echo "Unsupported distribution: ${REPO_OS:-unknown}" >&2
             return 1
             ;;
     esac
 
-    if [ -z "${repo_codename}" ]; then
+    if [ -z "${REPO_CODENAME}" ]; then
         echo "Could not determine distribution codename" >&2
         return 1
     fi
 
     sudo install -m 0755 -d /etc/apt/keyrings
-    sudo curl -fsSL "https://download.docker.com/linux/${repo_os}/gpg" -o /etc/apt/keyrings/docker.asc
+    sudo curl -fsSL "https://download.docker.com/linux/${REPO_OS}/gpg" -o /etc/apt/keyrings/docker.asc
     sudo chmod a+r /etc/apt/keyrings/docker.asc
     sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
 Types: deb
-URIs: https://download.docker.com/linux/${repo_os}
-Suites: ${repo_codename}
+URIs: https://download.docker.com/linux/${REPO_OS}
+Suites: ${REPO_CODENAME}
 Components: stable
 Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
@@ -300,13 +309,8 @@ configure_git() {
     GIT_USER=$(git config --global user.name 2>/dev/null || true)
     local GIT_EMAIL
     GIT_EMAIL=$(git config --global user.email 2>/dev/null || true)
-    local ESC_GIT_USER
-    local ESC_GIT_EMAIL
-    local ESC_PRIVKEY
-    local EMAIL=""
-    local USER
+    local GIT_USER_INPUT
     local ENTRY
-    local ERROR_LEVEL
 
     mkdir -p "$HOME/git"
     mkdir -p "$SSH_DIR"
@@ -317,17 +321,15 @@ configure_git() {
 
     if [ -z "$GIT_USER" ]; then
         echo "Enter your git username:"
-        input -p "> " USER
-        git config --global user.name "$USER"
+        input -p "> " GIT_USER_INPUT
+        git config --global user.name "$GIT_USER_INPUT"
         GIT_USER=$(git config --global user.name)
     fi
 
     if [ -z "$GIT_EMAIL" ]; then
-        if [ -z "$EMAIL" ]; then
-            echo "Enter your git email:"
-            input -p "> " EMAIL
-        fi
-        git config --global user.email "$EMAIL"
+        echo "Enter your git email:"
+        input -p "> " GIT_EMAIL
+        git config --global user.email "$GIT_EMAIL"
         GIT_EMAIL=$(git config --global user.email)
     fi
 
@@ -341,12 +343,7 @@ configure_git() {
 
     # Update ssh config file
 
-    # Escape variables for use in sed
-    ESC_GIT_USER=$(echo "$GIT_USER" | sed 's/[]\/$*.^[]/\\&/g')
-    ESC_GIT_EMAIL=$(echo "$GIT_EMAIL" | sed 's/[]\/$*.^[]/\\&/g')
-    ESC_PRIVKEY=$(echo "$PRIVKEY" | sed 's/[]\/$*.^[]/\\&/g')
-
-    if ! grep -q "# $ESC_GIT_USER|$ESC_GIT_EMAIL" "$SSH_CONFIG"; then
+    if ! grep -Fq "# $GIT_USER|$GIT_EMAIL" "$SSH_CONFIG"; then
         ENTRY="# $GIT_USER|$GIT_EMAIL
 Host github.com
 HostName github.com
@@ -363,7 +360,7 @@ IdentityFile $PRIVKEY"
 
     # Test the key (exit 1 = authenticated, GitHub just denies shell access)
     local rc=0
-    ssh -T git@github.com >/dev/null 2>&1 || rc=$?
+    ssh -T -o ConnectTimeout=10 git@github.com >/dev/null 2>&1 || rc=$?
     if ! [ "$rc" -eq 1 ]; then
         echo ""
         echo "Below is your SSH key for git authentication. Please copy it and add it to your GitHub account (https://github.com/settings/keys) before continuing."
@@ -378,7 +375,7 @@ IdentityFile $PRIVKEY"
         prompt_continue
 
         rc=0
-        ssh -T git@github.com >/dev/null 2>&1 || rc=$?
+        ssh -T -o ConnectTimeout=10 git@github.com >/dev/null 2>&1 || rc=$?
 
         if [ "$rc" -ne 1 ]; then
             echo "Failed to authenticate as $GIT_USER ($GIT_EMAIL) using $PRIVKEY. Please try again."
@@ -464,18 +461,18 @@ echo ""
 echo "  $((NEXT_STEP++)). Read the hatch-baby/rest_plus documentation for build/flash/monitor instructions"
 
 if [ -z "${SSH_CONNECTION:-}" ]; then
-echo ""
-echo "  $((NEXT_STEP++)). Setup remote SSH access from a Windows machine. Use this PowerShell command to get started:"
-echo ""
-echo "$(win_ssh_setup_cmd)"
+    echo ""
+    echo "  $((NEXT_STEP++)). Setup remote SSH access from a Windows machine. Use this PowerShell command to get started:"
+    echo ""
+    echo "$(win_ssh_setup_cmd)"
 fi
 
 echo ""
 echo "  $((NEXT_STEP++)). Setup a static DHCP rule in your router to permanently assign $IP to $MAC"
 
 if [ "$HAS_GUI" = true ]; then
-echo ""
-echo "  $((NEXT_STEP++)). Re-run this script with --uninstall-gui to remove the desktop environment"
+    echo ""
+    echo "  $((NEXT_STEP++)). Re-run this script with --uninstall-gui to remove the desktop environment"
 fi
 
 if reboot_pending; then

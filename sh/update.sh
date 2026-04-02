@@ -17,7 +17,7 @@ cleanup() {
 wait_for_locks() {
     local LOCK
     for LOCK in /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock; do
-        while sudo fuser $LOCK >/dev/null 2>&1; do
+        while sudo fuser "$LOCK" >/dev/null 2>&1; do
             sleep 1
         done
     done
@@ -35,7 +35,7 @@ wait_for_locks
 
 echo "Updating system..."
 
-sudo apt-get -qq update -y --allow-releaseinfo-change
+sudo apt-get -qq update --allow-releaseinfo-change
 sudo apt-get -qq --fix-broken install
 sudo dpkg --configure -a
 sudo apt-get -qq full-upgrade -y
