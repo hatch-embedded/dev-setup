@@ -128,6 +128,8 @@ download_scripts() {
     local FILENAMES=("update.sh" "cron.sh")
     local FILEPATH
 
+    apt_install wget
+
     mkdir -p "$SH"
     for FILENAME in "${FILENAMES[@]}"; do
         FILEPATH="$SH/$FILENAME"
