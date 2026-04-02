@@ -362,7 +362,7 @@ IdentityFile $PRIVKEY"
 
     # Test the key (exit 1 = authenticated, GitHub just denies shell access)
     local rc=0
-    ssh -T -o ConnectTimeout=10 git@github.com >/dev/null 2>&1 || rc=$?
+    ssh -T -o ConnectTimeout=10 git@github.com </dev/null >/dev/null 2>&1 || rc=$?
     if ! [ "$rc" -eq 1 ]; then
         echo ""
         echo "Below is your SSH key for git authentication. Please copy it and add it to your GitHub account (https://github.com/settings/keys) before continuing."
@@ -377,7 +377,7 @@ IdentityFile $PRIVKEY"
         prompt_continue
 
         rc=0
-        ssh -T -o ConnectTimeout=10 git@github.com >/dev/null 2>&1 || rc=$?
+        ssh -T -o ConnectTimeout=10 git@github.com </dev/null >/dev/null 2>&1 || rc=$?
 
         if [ "$rc" -ne 1 ]; then
             echo "Failed to authenticate as $GIT_USER ($GIT_EMAIL) using $PRIVKEY. Please try again."
