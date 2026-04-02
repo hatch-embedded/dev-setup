@@ -44,11 +44,15 @@ irm https://hatch-embedded.github.io/dev-setup/win/configure_ssh.ps1 | iex
 Run with extra arguments like so:
 
 ```sh
-curl -fsSL https://hatch-embedded.github.io/dev-setup/configure.sh | bash -s -- <extra arguments here>
+curl -fsSL https://hatch-embedded.github.io/dev-setup/configure.sh | bash -s -- <args>
 ```
 
-Here is a list of extra arguments
+Here are the supported extra arguments:
 
 ```
+--skip-git
+    Skips the prompts and error check for setting up SSH access to github.com
+
 --uninstall-gui
+    At the end of configuration, prompts the user to disable and uninstall the desktop enviornment
 ```

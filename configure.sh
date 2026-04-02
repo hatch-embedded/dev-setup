@@ -1,18 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
-VERSION="2.3"
+
+# Constant Config #
+
+VERSION="2.4"
 HOST="https://hatch-embedded.github.io/dev-setup"
 SH="$HOME/sh"
 REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
-UNINSTALL_GUI=false
 
+# Dynamic Config #
+
+SKIP_GIT=false
+UNINSTALL_GUI=false
 for arg in "$@"; do
     case "$arg" in
         --uninstall-gui) UNINSTALL_GUI=true ;;
+        --skip-git) SKIP_GIT=true ;;
     esac
 done
 
-# Functions
+HAS_GUI=false
+if [ "$(systemctl get-default)" != "multi-user.target" ]; then
+    HAS_GUI=true
+fi
+
+IP=$(hostname -I | awk '{print $1}')
+MAC=$(ip -br link | grep "$(ip -br addr show | awk -v ip="$IP" '$0 ~ ip {print $1}')" | awk '{print $3}')
+
+# Functions #
 
 input() {
     read "$@" </dev/tty
@@ -79,8 +94,8 @@ prompt_yes_no() {
 }
 
 win_ssh_setup_cmd() {    
-    IP=$(hostname -I | awk '{print $1}')
-    MAC=$(ip -br link | grep "$(ip -br addr show | awk -v ip="$IP" '$0 ~ ip {print $1}')" | awk '{print $3}')
+    local IP=$(hostname -I | awk '{print $1}')
+    local MAC=$(ip -br link | grep "$(ip -br addr show | awk -v ip="$IP" '$0 ~ ip {print $1}')" | awk '{print $3}')
     echo "\$h='$IP';\$u='$(user)';\$p=22; irm $HOST/win/configure_ssh.ps1 | iex"
 }
 
@@ -356,6 +371,7 @@ IdentityFile $PRIVKEY"
         cat "$PUBKEY"
         echo ""
         echo "Alternatively, you may wish to press CTRL+C to abort and resume from a Windows SSH session to allow for easier copy/paste of the key. Here is the PowerShell command to begin:"
+        echo ""
         echo "$(win_ssh_setup_cmd)"
         echo ""
 
@@ -405,6 +421,8 @@ uninstall_gui() {
     echo "✅ | UNINSTALL Desktop"
 }
 
+# Main Script #
+
 echo ""
 echo "========== Hatch dev-setup v$VERSION =========="
 echo ""
@@ -417,7 +435,10 @@ install_ssh_server
 install_docker
 install_claude
 schedule_updates
-configure_git
+
+if [ "$SKIP_GIT" != true ]; then
+    configure_git
+fi
 
 if [ ! -d "$HOME/git/rest_plus" ]; then
     if prompt_yes_no "Would you like to clone and setup the firmware repository to '$HOME/git/rest_plus'? [Y/n]"; then
@@ -425,25 +446,37 @@ if [ ! -d "$HOME/git/rest_plus" ]; then
     fi
 fi
 
-if [ "$UNINSTALL_GUI" = true ] && [ "$(systemctl get-default)" != "multi-user.target" ]; then
+if [ "$UNINSTALL_GUI" = true ] && [ "$HAS_GUI" = true ]; then
     echo ""
     if prompt_yes_no --default-no "Disable and uninstall all desktop components from your system (only do this if you are going to use this machine as a headless server) [y/N]?"; then
         uninstall_gui
+        HAS_GUI=false
     fi
 fi
+
+NEXT_STEP=1
 
 echo ""
 echo "======== Configuration Complete! ========"
 echo ""
 echo "Here are some things you might want to do next:"
 echo ""
-echo "  1. Read the hatch-baby/rest_plus documentation for build/flash/monitor instructions."
+echo "  $((NEXT_STEP++)). Read the hatch-baby/rest_plus documentation for build/flash/monitor instructions"
+
+if [ -z "${SSH_CONNECTION:-}" ]; then
 echo ""
-echo "  2. Setup remote SSH access from a Windows machine. Use this PowerShell command to get started:"
+echo "  $((NEXT_STEP++)). Setup remote SSH access from a Windows machine. Use this PowerShell command to get started:"
 echo ""
 echo "$(win_ssh_setup_cmd)"
+fi
+
 echo ""
-echo "  3. Setup a static DHCP rule in your router to permanently assign $IP to $MAC"
+echo "  $((NEXT_STEP++)). Setup a static DHCP rule in your router to permanently assign $IP to $MAC"
+
+if [ "$HAS_GUI" = true ]; then
+echo ""
+echo "  $((NEXT_STEP++)). Re-run this script with --uninstall-gui to remove the desktop environment"
+fi
 
 if reboot_pending; then
     echo ""
