@@ -441,7 +441,7 @@ if [ "$SKIP_GIT" != true ]; then
     configure_git
 fi
 
-if [ ! -d "$HOME/git/rest_plus" ]; then
+if [ "$SKIP_GIT" != true ] && [ ! -d "$HOME/git/rest_plus" ]; then
     if prompt_yes_no "Would you like to clone and setup the firmware repository to '$HOME/git/rest_plus'? [Y/n]"; then
         setup_rest_plus
     fi
