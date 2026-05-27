@@ -53,6 +53,16 @@ Owns OS-level base configuration. The work in this repo:
   - Sets `PermitRootLogin no` in `sshd_config` and restarts sshd. Leaves `PasswordAuthentication` **on** for now — Ansible disables it on first apply, once the human key whitelist is in place. This avoids locking the operator out between configure.sh and the first Ansible run.
   - Skips the personal-git-identity prompts (existing `--skip-git` behavior).
   - Does **not** install ESP-IDF or other build deps. Those come from the `Setup Runner` workflow in `rest_plus`.
+- Add a new helper script `sh/setup_runner.sh` that wraps the manual GitHub Actions runner install. The operator runs it once per new tester with a registration token they fetched from the GitHub UI:
+  ```
+  curl -fsSL https://hatch-embedded.github.io/dev-setup/sh/setup_runner.sh \
+    | sudo bash -s -- <REGISTRATION-TOKEN>
+  ```
+  The script:
+  - Pins the GitHub Actions runner version (a variable at the top of the script — bump by editing dev-setup).
+  - Switches to `hatch-runner` and: creates `~/actions-runner`, downloads + extracts the pinned runner tarball, runs `config.sh --url https://github.com/hatch-baby/rest_plus --token <TOKEN> --labels embedded-tester-setup --unattended`.
+  - Back as root: runs `svc.sh install hatch-runner` and `svc.sh start`.
+  - Idempotent: if a runner is already configured at `~/actions-runner`, prints a message and exits 0 without changes.
 
 ### `hatch-baby/rest_plus` (existing, private)
 
@@ -183,20 +193,20 @@ github_runner_repo: rest_plus
    Add a /etc/hosts entry on the Ansible controller (or update
    office DNS) mapping tester-NN to its IP.                             [~2 min]
 
-4. Still SSHed in as admin: register the GitHub Actions runner
-   under hatch-runner. From an empty directory:
+4. In the rest_plus GitHub UI: Settings → Actions → Runners →
+   New self-hosted runner → Linux/x64. Copy the registration
+   token from the page (everything after `--token` in the
+   provided command).
 
-     sudo -u hatch-runner -H bash -c '
-       mkdir -p ~/actions-runner && cd ~/actions-runner
-       curl -o actions-runner.tar.gz -L <runner-url-from-github-ui>
-       tar xzf actions-runner.tar.gz
-       ./config.sh --url https://github.com/hatch-baby/rest_plus \
-         --token <REGISTRATION-TOKEN> \
-         --labels embedded-tester-setup
-     '
-     cd /home/hatch-runner/actions-runner
-     sudo ./svc.sh install hatch-runner
-     sudo ./svc.sh start
+   Still SSHed in as admin, run the helper script with that
+   token:
+
+     curl -fsSL https://hatch-embedded.github.io/dev-setup/sh/setup_runner.sh \
+       | sudo bash -s -- <REGISTRATION-TOKEN>
+
+   This installs the runner under hatch-runner, registers it
+   with label `embedded-tester-setup`, and starts the systemd
+   service.
 
    Then in the GitHub UI, trigger the Setup Runner workflow.
    It picks up the runner by `embedded-tester-setup` label and
