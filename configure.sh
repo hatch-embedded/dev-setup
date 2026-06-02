@@ -7,15 +7,18 @@ VERSION="2.4"
 HOST="https://hatch-embedded.github.io/dev-setup"
 SH="$HOME/sh"
 REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
+BOOTSTRAP_KEY="ssh-ed25519 REPLACE_WITH_ANSIBLE_CONTROLLER_PUBLIC_KEY ansible-controller@hatch"
 
 # Dynamic Config #
 
 SKIP_GIT=false
 UNINSTALL_GUI=false
+TESTER=false
 for arg in "$@"; do
     case "$arg" in
         --uninstall-gui) UNINSTALL_GUI=true ;;
         --skip-git) SKIP_GIT=true ;;
+        --tester) TESTER=true ;;
     esac
 done
 
@@ -122,6 +125,67 @@ enable_sudoless_serial_port() {
     fi
 
     echo "✅ | ENABLE sudoless serial port access"
+}
+
+create_hatch_runner() {
+    local RUNNER_USER="hatch-runner"
+    local SUDOERS_FILE="/etc/sudoers.d/hatch-runner"
+
+    if ! id "$RUNNER_USER" &>/dev/null; then
+        sudo useradd -r -m -s /bin/bash "$RUNNER_USER"
+    fi
+
+    for group in dialout docker; do
+        if getent group "$group" >/dev/null 2>&1; then
+            if ! groups "$RUNNER_USER" 2>/dev/null | grep -qw "$group"; then
+                sudo usermod -a -G "$group" "$RUNNER_USER"
+            fi
+        fi
+    done
+
+    sudo tee "$SUDOERS_FILE" >/dev/null <<'EOF'
+hatch-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt-get *
+hatch-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart actions.runner.*
+hatch-runner ALL=(ALL) NOPASSWD: /bin/systemctl stop actions.runner.*
+hatch-runner ALL=(ALL) NOPASSWD: /bin/systemctl start actions.runner.*
+EOF
+    sudo chmod 440 "$SUDOERS_FILE"
+    sudo visudo -c -f "$SUDOERS_FILE" >/dev/null
+
+    echo "✅ | CREATE hatch-runner service account"
+}
+
+install_bootstrap_key() {
+    local U
+    U="$(user)"
+    local SSH_DIR="/home/$U/.ssh"
+    local AUTH_KEYS="$SSH_DIR/authorized_keys"
+
+    sudo mkdir -p "$SSH_DIR"
+    sudo chmod 700 "$SSH_DIR"
+    sudo chown "$U:$U" "$SSH_DIR"
+    sudo touch "$AUTH_KEYS"
+    sudo chmod 600 "$AUTH_KEYS"
+    sudo chown "$U:$U" "$AUTH_KEYS"
+
+    if ! sudo grep -qF "$BOOTSTRAP_KEY" "$AUTH_KEYS" 2>/dev/null; then
+        echo "$BOOTSTRAP_KEY" | sudo tee -a "$AUTH_KEYS" >/dev/null
+    fi
+
+    echo "✅ | INSTALL bootstrap SSH key"
+}
+
+harden_sshd_tester() {
+    local SSHD_CONFIG="/etc/ssh/sshd_config"
+
+    if sudo grep -qE '^#?PermitRootLogin' "$SSHD_CONFIG"; then
+        sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
+    else
+        echo 'PermitRootLogin no' | sudo tee -a "$SSHD_CONFIG" >/dev/null
+    fi
+
+    sudo systemctl restart ssh
+    echo "✅ | HARDEN sshd (PermitRootLogin no; password auth left on for Ansible bootstrap)"
 }
 
 download_scripts() {
@@ -441,7 +505,11 @@ if [ "$SKIP_GIT" != true ]; then
     configure_git
 fi
 
-if [ "$SKIP_GIT" != true ] && [ ! -d "$HOME/git/rest_plus" ]; then
+if [ "$TESTER" = true ]; then
+    create_hatch_runner
+    install_bootstrap_key
+    harden_sshd_tester
+elif [ "$SKIP_GIT" != true ] && [ ! -d "$HOME/git/rest_plus" ]; then
     if prompt_yes_no "Would you like to clone and setup the firmware repository to '$HOME/git/rest_plus'? [Y/n]"; then
         setup_rest_plus
     fi
@@ -473,6 +541,14 @@ fi
 
 echo ""
 echo "  $((NEXT_STEP++)). Setup a static DHCP rule in your router to permanently assign $IP to $MAC"
+
+if [ "$TESTER" = true ]; then
+    echo ""
+    echo "  $((NEXT_STEP++)). Run setup_runner.sh with a registration token from:"
+    echo "     https://github.com/hatch-baby/rest_plus/settings/actions/runners/new"
+    echo ""
+    echo "     curl -fsSL $HOST/sh/setup_runner.sh | sudo bash -s -- <TOKEN>"
+fi
 
 if [ "$HAS_GUI" = true ]; then
     echo ""
