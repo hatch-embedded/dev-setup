@@ -177,14 +177,37 @@ install_bootstrap_key() {
 
 harden_sshd_tester() {
     local SSHD_CONFIG="/etc/ssh/sshd_config"
+    local DROPIN_DIR="/etc/ssh/sshd_config.d"
+    local CHANGED=false
 
     if sudo grep -qE '^#?PermitRootLogin' "$SSHD_CONFIG"; then
-        sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
+        # Replace existing line (commented or not)
+        local CURRENT
+        CURRENT=$(sudo grep -E '^#?PermitRootLogin' "$SSHD_CONFIG" | head -1)
+        if [ "$CURRENT" != "PermitRootLogin no" ]; then
+            sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
+            CHANGED=true
+        fi
     else
         echo 'PermitRootLogin no' | sudo tee -a "$SSHD_CONFIG" >/dev/null
+        CHANGED=true
     fi
 
-    sudo systemctl restart ssh
+    # On Debian 12+, sshd_config.d drop-ins can override the main config.
+    # Write a high-priority drop-in so our setting wins regardless.
+    if [ -d "$DROPIN_DIR" ]; then
+        local DROPIN="$DROPIN_DIR/99-hatch-tester.conf"
+        local DROPIN_CONTENT='PermitRootLogin no'
+        if [ ! -f "$DROPIN" ] || ! sudo grep -qxF "$DROPIN_CONTENT" "$DROPIN" 2>/dev/null; then
+            echo "$DROPIN_CONTENT" | sudo tee "$DROPIN" >/dev/null
+            CHANGED=true
+        fi
+    fi
+
+    if [ "$CHANGED" = true ]; then
+        sudo systemctl reload-or-restart ssh
+    fi
+
     echo "✅ | HARDEN sshd (PermitRootLogin no; password auth left on for Ansible bootstrap)"
 }
 
