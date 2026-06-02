@@ -7,7 +7,7 @@ VERSION="2.4"
 HOST="https://hatch-embedded.github.io/dev-setup"
 SH="$HOME/sh"
 REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
-BOOTSTRAP_KEY="ssh-ed25519 REPLACE_WITH_ANSIBLE_CONTROLLER_PUBLIC_KEY ansible-controller@hatch"
+BOOTSTRAP_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAkoMT281zQX8lGi/uRUf+exze5iuHY2tjjmBHHtbBmt ansible-controller@hatch"
 
 # Dynamic Config #
 
