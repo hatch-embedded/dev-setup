@@ -211,6 +211,46 @@ harden_sshd_tester() {
     echo "✅ | HARDEN sshd (PermitRootLogin no; password auth left on for Ansible bootstrap)"
 }
 
+save_hardware_ids() {
+    local OUT_FILE="/etc/hatch-tester-ids.txt"
+
+    # Collect bluetooth MACs before entering the piped subshell
+    local BT_LINES=()
+    for ADDR_FILE in /sys/class/bluetooth/*/address; do
+        [ -f "$ADDR_FILE" ] || continue
+        BT_LINES+=("  $(basename "$(dirname "$ADDR_FILE")")  $(cat "$ADDR_FILE")")
+    done
+
+    {
+        echo "hostname:    $(hostname)"
+        echo "machine-id:  $(cat /etc/machine-id 2>/dev/null || echo unknown)"
+        echo ""
+        echo "network interfaces:"
+        ip -br link show 2>/dev/null | grep -v '^lo ' | while read -r IFACE STATE MAC _; do
+            case "$IFACE" in
+                en*) TYPE="ethernet" ;;
+                wl*) TYPE="wifi    " ;;
+                *)   TYPE="other   " ;;
+            esac
+            echo "  $TYPE  $IFACE  $MAC"
+        done
+        echo ""
+        echo "bluetooth:"
+        if [ "${#BT_LINES[@]}" -gt 0 ]; then
+            printf '%s\n' "${BT_LINES[@]}"
+        else
+            echo "  (none found)"
+        fi
+    } | sudo tee "$OUT_FILE" >/dev/null
+
+    echo ""
+    echo "======== Hardware Identifiers (saved to $OUT_FILE) ========"
+    sudo cat "$OUT_FILE"
+    echo "============================================================"
+    echo ""
+    echo "✅ | SAVE hardware identifiers"
+}
+
 download_scripts() {
     local FILENAMES=("update.sh" "cron.sh")
     local FILEPATH
@@ -532,6 +572,7 @@ if [ "$TESTER" = true ]; then
     create_hatch_runner
     install_bootstrap_key
     harden_sshd_tester
+    save_hardware_ids
 elif [ "$SKIP_GIT" != true ] && [ ! -d "$HOME/git/rest_plus" ]; then
     if prompt_yes_no "Would you like to clone and setup the firmware repository to '$HOME/git/rest_plus'? [Y/n]"; then
         setup_rest_plus
