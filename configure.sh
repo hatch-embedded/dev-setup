@@ -214,12 +214,19 @@ harden_sshd_tester() {
 save_hardware_ids() {
     local OUT_FILE="/etc/hatch-tester-ids.txt"
 
-    # Collect bluetooth MACs before entering the piped subshell
+    # Collect bluetooth MACs — try bluetoothctl first, fall back to sysfs
     local BT_LINES=()
-    for ADDR_FILE in /sys/class/bluetooth/*/address; do
-        [ -f "$ADDR_FILE" ] || continue
-        BT_LINES+=("  $(basename "$(dirname "$ADDR_FILE")")  $(cat "$ADDR_FILE")")
-    done
+    if command -v bluetoothctl >/dev/null 2>&1; then
+        while IFS= read -r line; do
+            BT_LINES+=("  $line")
+        done < <(bluetoothctl show 2>/dev/null | awk '/^Controller/{ctrl=$2} /Address:/{print ctrl "  " $2}')
+    fi
+    if [ "${#BT_LINES[@]}" -eq 0 ]; then
+        for ADDR_FILE in /sys/class/bluetooth/*/address; do
+            [ -f "$ADDR_FILE" ] || continue
+            BT_LINES+=("  $(basename "$(dirname "$ADDR_FILE")")  $(cat "$ADDR_FILE")")
+        done
+    fi
 
     {
         echo "hostname:    $(hostname)"
