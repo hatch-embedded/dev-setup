@@ -292,6 +292,10 @@ apt_install_common() {
     local SYS_PKG=(ufw ca-certificates gnupg)
     local UTIL_PKG=(wget curl rsync openssh-server)
     local DEV_PKG=(git cmake ccache)
+    local TESTER_PKG=()
+    if [ "$TESTER" = true ]; then
+        TESTER_PKG=(bluez)
+    fi
     local PYTHON_PKG=(python3 python3-full python3-venv python3-virtualenv python3-setuptools python3-pip)
 
     # python-is-python3 is not available on Debian 11 (bullseye)
@@ -300,7 +304,7 @@ apt_install_common() {
     fi
 
     apt_update
-    apt_install "${SYS_PKG[@]}" "${UTIL_PKG[@]}" "${DEV_PKG[@]}" "${PYTHON_PKG[@]}"
+    apt_install "${SYS_PKG[@]}" "${UTIL_PKG[@]}" "${DEV_PKG[@]}" "${PYTHON_PKG[@]}" "${TESTER_PKG[@]}"
 
     echo "✅ | INSTALL common packages"
 }
