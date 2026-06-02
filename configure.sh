@@ -213,6 +213,8 @@ harden_sshd_tester() {
 
 save_hardware_ids() {
     local OUT_FILE="/etc/hatch-tester-ids.txt"
+    local SCRIPT_DIR
+    SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]:-$0}" 2>/dev/null || echo "$PWD")")
 
     # Collect bluetooth MACs — try bluetoothctl first, fall back to sysfs
     local BT_LINES=()
@@ -249,6 +251,10 @@ save_hardware_ids() {
             echo "  (none found)"
         fi
     } | sudo tee "$OUT_FILE" >/dev/null
+
+    # Also save a copy to the directory the script was run from (e.g. USB stick)
+    local LOCAL_FILE="$SCRIPT_DIR/$(hostname)-ids.txt"
+    sudo cp "$OUT_FILE" "$LOCAL_FILE" 2>/dev/null || cp "$OUT_FILE" "$LOCAL_FILE" 2>/dev/null || true
 
     echo ""
     echo "======== Hardware Identifiers (saved to $OUT_FILE) ========"
