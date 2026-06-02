@@ -111,16 +111,15 @@ Also add a line to `/etc/hosts` on the Ansible controller machine:
 
 1. In GitHub, go to **rest_plus → Settings → Actions → Runners → New self-hosted runner** (Linux / x64). Copy the registration token shown in the `./config.sh` command (the value after `--token`).
 
-2. Back on the tester (still SSHed in as `admin`), run:
+2. Back on the tester (still SSHed in as `admin`), run the script from the USB stick, passing the registration token and the path to the `rest_plus` folder on the USB stick:
 
    ```sh
-   curl -fsSL https://hatch-embedded.github.io/dev-setup/sh/setup_runner.sh \
-     | sudo bash -s -- <REGISTRATION-TOKEN>
+   sudo bash /media/admin/USB/setup_runner.sh <REGISTRATION-TOKEN> /media/admin/USB/rest_plus
    ```
 
    This will:
    - Install the GitHub Actions runner under the `hatch-runner` account (~2 min)
-   - Clone `rest_plus` (~1 min)
+   - Copy `rest_plus` from the USB stick (~1 min)
    - Install ESP-IDF and build dependencies (~20–30 min unattended)
 
    The script is idempotent — safe to re-run if anything fails.

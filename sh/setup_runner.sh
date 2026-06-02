@@ -2,9 +2,10 @@
 set -euo pipefail
 
 # Installs the GitHub Actions runner under the hatch-runner service account,
-# then clones rest_plus and runs tools/setup/setup.sh to install ESP-IDF.
+# then copies rest_plus from a local path and runs tools/setup/setup.sh to install ESP-IDF.
 #
-# Usage: curl -fsSL .../sh/setup_runner.sh | sudo bash -s -- <REGISTRATION-TOKEN>
+# Usage: sudo bash setup_runner.sh <REGISTRATION-TOKEN> <PATH-TO-REST-PLUS>
+# Example: sudo bash setup_runner.sh ABCxyz123 /media/admin/USB/rest_plus
 # Must be run as root (via sudo).
 
 RUNNER_VERSION="2.319.1"
@@ -12,17 +13,20 @@ RUNNER_USER="hatch-runner"
 RUNNER_DIR="/home/${RUNNER_USER}/actions-runner"
 GIT_DIR="/home/${RUNNER_USER}/git"
 REST_PLUS_DIR="${GIT_DIR}/rest_plus"
+
+TOKEN="${1:?Usage: sudo bash setup_runner.sh <REGISTRATION-TOKEN> <PATH-TO-REST-PLUS>}"
+REST_PLUS_SRC="${2:?Usage: sudo bash setup_runner.sh <REGISTRATION-TOKEN> <PATH-TO-REST-PLUS>}"
 REPO_URL="https://github.com/hatch-baby/rest_plus"
 
-TOKEN="${1:?Usage: sudo bash setup_runner.sh <REGISTRATION-TOKEN>}"
-
 if [ "$(id -u)" -ne 0 ]; then
-    echo "This script must be run as root. Use: sudo bash -s -- <TOKEN>" >&2
+    echo "This script must be run as root. Use: sudo bash setup_runner.sh <TOKEN> <PATH>" >&2
     exit 1
 fi
 
-# The user who invoked sudo — used to clone with their GitHub SSH key.
-INVOKING_USER="${SUDO_USER:-$(logname 2>/dev/null || echo admin)}"
+if [ ! -d "$REST_PLUS_SRC" ]; then
+    echo "Error: rest_plus not found at: $REST_PLUS_SRC" >&2
+    exit 1
+fi
 
 echo ""
 echo "========== HIL Tester Runner Setup =========="
@@ -53,17 +57,16 @@ else
     echo "✅ | INSTALL GitHub Actions runner"
 fi
 
-# ---- Clone rest_plus ----
+# ---- Copy rest_plus ----
 
 if [ -d "${REST_PLUS_DIR}/.git" ]; then
-    echo "⏭  | SKIP clone (rest_plus already exists at ${REST_PLUS_DIR})"
+    echo "⏭  | SKIP copy (rest_plus already exists at ${REST_PLUS_DIR})"
 else
-    echo "Cloning rest_plus (using ${INVOKING_USER}'s GitHub SSH key)..."
-    sudo -u "${INVOKING_USER}" git clone \
-        git@github.com:hatch-baby/rest_plus.git \
-        "${REST_PLUS_DIR}"
+    echo "Copying rest_plus from ${REST_PLUS_SRC}..."
+    mkdir -p "${GIT_DIR}"
+    cp -r "${REST_PLUS_SRC}" "${REST_PLUS_DIR}"
     chown -R "${RUNNER_USER}:${RUNNER_USER}" "${GIT_DIR}"
-    echo "✅ | CLONE rest_plus"
+    echo "✅ | COPY rest_plus"
 fi
 
 # ---- Install build dependencies ----

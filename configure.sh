@@ -18,7 +18,7 @@ for arg in "$@"; do
     case "$arg" in
         --uninstall-gui) UNINSTALL_GUI=true ;;
         --skip-git) SKIP_GIT=true ;;
-        --tester) TESTER=true ;;
+        --tester) TESTER=true; SKIP_GIT=true ;;
     esac
 done
 
