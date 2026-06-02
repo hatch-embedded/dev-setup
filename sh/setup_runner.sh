@@ -48,9 +48,8 @@ else
           --name \"\$(hostname)\" \
           --unattended
     "
-    cd "${RUNNER_DIR}"
-    ./svc.sh install "${RUNNER_USER}"
-    ./svc.sh start
+    "${RUNNER_DIR}/svc.sh" install "${RUNNER_USER}"
+    "${RUNNER_DIR}/svc.sh" start
     echo "✅ | INSTALL GitHub Actions runner"
 fi
 
@@ -69,21 +68,25 @@ fi
 
 # ---- Install build dependencies ----
 
-echo ""
-echo "Installing ESP-IDF and build dependencies (~20-30 min)..."
-echo ""
+if [ -d "/home/${RUNNER_USER}/.espressif" ]; then
+    echo "⏭  | SKIP build deps (ESP-IDF already installed)"
+else
+    echo ""
+    echo "Installing ESP-IDF and build dependencies (~20-30 min)..."
+    echo ""
 
-# Run as root with HOME set to hatch-runner's home so ESP-IDF tools land in
-# /home/hatch-runner/.espressif where the runner can find them during workflow runs.
-HOME="/home/${RUNNER_USER}" bash "${REST_PLUS_DIR}/tools/setup/setup.sh"
+    # Run as root with HOME set to hatch-runner's home so ESP-IDF tools land in
+    # /home/hatch-runner/.espressif where the runner can find them during workflow runs.
+    HOME="/home/${RUNNER_USER}" bash "${REST_PLUS_DIR}/tools/setup/setup.sh"
 
-# Fix ownership: files written by root need to be readable by hatch-runner.
-chown -R "${RUNNER_USER}:${RUNNER_USER}" \
-    "/home/${RUNNER_USER}/.espressif" \
-    "/home/${RUNNER_USER}/.ccache" \
-    2>/dev/null || true
+    # Fix ownership: files written by root need to be readable by hatch-runner.
+    chown -R "${RUNNER_USER}:${RUNNER_USER}" \
+        "/home/${RUNNER_USER}/.espressif" \
+        "/home/${RUNNER_USER}/.ccache" \
+        2>/dev/null || true
 
-echo "✅ | INSTALL build dependencies"
+    echo "✅ | INSTALL build dependencies"
+fi
 
 echo ""
 echo "========== Runner Setup Complete =========="
