@@ -221,7 +221,7 @@ save_hardware_ids() {
     if command -v bluetoothctl >/dev/null 2>&1; then
         while IFS= read -r line; do
             BT_LINES+=("  $line")
-        done < <(bluetoothctl show 2>/dev/null | awk '/^Controller/{ctrl=$2} /Address:/{print ctrl "  " $2}')
+        done < <(bluetoothctl show 2>/dev/null | awk '/^Controller/{print $2}')
     fi
     if [ "${#BT_LINES[@]}" -eq 0 ]; then
         for ADDR_FILE in /sys/class/bluetooth/*/address; do
