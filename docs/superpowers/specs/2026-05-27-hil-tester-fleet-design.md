@@ -20,8 +20,8 @@ Provision and operate a fleet of ~10 Mini-PC machines as Hardware-in-the-Loop (H
 The current state of the world:
 
 - `hatch-embedded/dev-setup` (private; `configure.sh` served publicly via GitHub Pages) provisions developer machines and, with `--skip-git`, tester machines too. It creates *the install-time user* — not a dedicated service account.
-- `hatch-baby/rest_plus` contains the firmware, the build-deps installer (`tools/setup/setup.sh`), and a one-shot `Setup Runner` workflow that runs that installer on a newly-registered runner labeled `embedded-tester-setup`.
-- A single tester exists today. The provisioning procedure in `rest_plus/doc/tester_setup.md` is fully manual: register the runner by hand, configure labels by hand, set `UNIT_TEST_PORT` by hand, remove the bootstrap label by hand.
+- `hatch-baby/rest_plus` contains the firmware and a build-deps installer at `tools/setup/setup.sh`.
+- A single tester exists today. The provisioning procedure in `rest_plus/doc/tester_setup.md` is fully manual: register the runner by hand, configure labels by hand, set `UNIT_TEST_PORT` by hand.
 - There is no fleet-wide mechanism for managing SSH keys, runner versions, or per-host hardware identity. Scaling to 10 testers without one means per-machine drudgery whenever anything changes.
 
 ## Decisions
@@ -34,8 +34,7 @@ The current state of the world:
 | Hardware identity | Layered GitHub Actions runner labels driven by a per-host config file `/etc/hatch-tester.conf`. | Multiple labels per runner match the granularity needed (`hil`, `tester-<product>`, `has-<capability>`). Workflows target the specific combination they need. |
 | Source of truth | New private repo **`hatch-baby/hil-fleet`** holds Ansible inventory, playbooks, and the SSH-key whitelist. | Separate repo from `embedded-support` keeps blast radius isolated, gates inventory changes on different reviewers if needed, separates apply-on-merge CI from script CI. Standard pattern for infrastructure-as-code. |
 | Bootstrap | Manual Debian install + one curl of `configure.sh --tester`. After that, Ansible adopts the machine. | Physical install is unavoidable; everything after it is automated via Ansible inventory PRs. |
-| Build-deps install | Stays in `rest_plus/tools/setup/setup.sh`. Invoked via the existing `Setup Runner` workflow, unchanged. | Build deps live next to the firmware that requires them. Ansible does not duplicate this logic. |
-| Bootstrap-label dance | Stays a manual step. Ansible manages steady-state labels only. | Setup Runner is a one-shot per tester. Automating it adds Ansible complexity (PAT scope, async wait, GitHub API) that does not pay off across a 10-tester fleet. |
+| Build-deps install | `setup_runner.sh` clones `rest_plus` and calls `tools/setup/setup.sh` directly. No GitHub workflow involved. | Operator is already SSHed in; running the script directly is simpler than a workflow round-trip. Build deps still live in `rest_plus` next to the firmware that requires them. |
 | CI trigger pattern | Deferred. Runner setup is identical regardless. | TBD based on test duration once HIL tests exist. |
 
 ## Repo split
@@ -52,24 +51,24 @@ Owns OS-level base configuration. The work in this repo:
   - Drops a single **bootstrap public key** into `admin`'s `authorized_keys`, alongside whatever key the operator added during install. The bootstrap key is held only by the Ansible controller / apply workflow's secret store. Humans get their personal keys later, via Ansible.
   - Sets `PermitRootLogin no` in `sshd_config` and restarts sshd. Leaves `PasswordAuthentication` **on** for now — Ansible disables it on first apply, once the human key whitelist is in place. This avoids locking the operator out between configure.sh and the first Ansible run.
   - Skips the personal-git-identity prompts (existing `--skip-git` behavior).
-  - Does **not** install ESP-IDF or other build deps. Those come from the `Setup Runner` workflow in `rest_plus`.
-- Add a new helper script `sh/setup_runner.sh` that wraps the manual GitHub Actions runner install. The operator runs it once per new tester with a registration token they fetched from the GitHub UI:
+  - Does **not** install ESP-IDF or other build deps. Those are handled by `setup_runner.sh`.
+- Add a new helper script `sh/setup_runner.sh`. The operator runs it once per new tester with a registration token fetched from the GitHub UI:
   ```
   curl -fsSL https://hatch-embedded.github.io/dev-setup/sh/setup_runner.sh \
     | sudo bash -s -- <REGISTRATION-TOKEN>
   ```
   The script:
-  - Pins the GitHub Actions runner version (a variable at the top of the script — bump by editing dev-setup).
-  - Switches to `hatch-runner` and: creates `~/actions-runner`, downloads + extracts the pinned runner tarball, runs `config.sh --url https://github.com/hatch-baby/rest_plus --token <TOKEN> --labels embedded-tester-setup --unattended`.
+  - Pins the GitHub Actions runner version (a variable at the top — bump by editing dev-setup).
+  - Switches to `hatch-runner` and: creates `~/actions-runner`, downloads + extracts the pinned runner tarball, runs `config.sh --url https://github.com/hatch-baby/rest_plus --token <TOKEN> --unattended`.
   - Back as root: runs `svc.sh install hatch-runner` and `svc.sh start`.
-  - Idempotent: if a runner is already configured at `~/actions-runner`, prints a message and exits 0 without changes.
+  - Clones `rest_plus` into `~hatch-runner/git/rest_plus` and runs `tools/setup/setup.sh` to install ESP-IDF and build deps.
+  - Idempotent: skips runner config if already configured, skips clone if repo already exists.
 
 ### `hatch-baby/rest_plus` (existing, private)
 
 Unchanged structurally. Continues to own:
 
-- Firmware build deps installer at `tools/setup/setup.sh`.
-- `Setup Runner` workflow at `.github/workflows/setup-runner.yml` targeting `embedded-tester-setup` label.
+- Firmware build deps installer at `tools/setup/setup.sh` (called by `setup_runner.sh` during initial provisioning).
 - Existing unit-test workflow at `.github/workflows/unit-test.yml`. Later, workflows that target hardware-specific tests will use `runs-on: [hil, tester-<product>]` matrix entries.
 
 ### `hatch-baby/hil-fleet` (NEW, private)
@@ -162,7 +161,7 @@ github_runner_repo: rest_plus
   - `tester-<product>` — one per product (e.g. `tester-restoreV5`, `tester-riot`).
   - `has-<capability>` — one per capability (e.g. `has-esp-prog`, `has-power-relay`).
   - `embedded-unit-test` — kept for backward compatibility with the existing workflow.
-- **Runner labels (transient).** `embedded-tester-setup` is applied by hand in the GitHub UI during initial provisioning; removed by hand after `Setup Runner` finishes.
+- **Runner labels (transient).** None. The initial `setup_runner.sh` registers the runner without labels; Ansible assigns the steady-state label set on first apply.
 
 ## End-to-end flows
 
@@ -204,24 +203,17 @@ github_runner_repo: rest_plus
      curl -fsSL https://hatch-embedded.github.io/dev-setup/sh/setup_runner.sh \
        | sudo bash -s -- <REGISTRATION-TOKEN>
 
-   This installs the runner under hatch-runner, registers it
-   with label `embedded-tester-setup`, and starts the systemd
-   service.
+   This installs the runner under hatch-runner, starts the
+   systemd service, clones rest_plus, and runs
+   tools/setup/setup.sh to install ESP-IDF and build deps.
+   (~20–30 min unattended.)                                             [~30 min]
 
-   Then in the GitHub UI, trigger the Setup Runner workflow.
-   It picks up the runner by `embedded-tester-setup` label and
-   runs `tools/setup/setup.sh` (installs ESP-IDF, build deps).          [~20 min]
-
-5. After Setup Runner succeeds, remove the embedded-tester-setup
-   label from the runner in the GitHub UI (otherwise Setup
-   Runner would keep matching this box).                                [~1 min]
-
-6. Open a PR against hil-fleet:
+5. Open a PR against hil-fleet:
      - Add a tester-NN block to inventory/hosts.yml with product,
        capabilities, unit_test_port.
    Merge.                                                               [~2 min]
 
-7. The apply.yml workflow runs `ansible-playbook site.yml`. It
+6. The apply.yml workflow runs `ansible-playbook site.yml`. It
    reaches tester-NN over SSH as admin using the Ansible
    controller's key (pre-seeded as the bootstrap key), and:
      - Replaces admin's authorized_keys with the full whitelist
@@ -230,21 +222,20 @@ github_runner_repo: rest_plus
        applies keep working.
      - Sets PasswordAuthentication no and restarts sshd.
      - Writes /etc/hatch-tester.conf.
-     - Adds the steady-state labels to the runner
+     - Registers the runner with steady-state labels
        (hil, tester-<product>, has-<capability>..., embedded-unit-test)
        via `config.sh --replace` or the GitHub API.
      - Writes UNIT_TEST_PORT into the runner's .env from
        /etc/hatch-tester.conf.
      - Ensures the runner systemd service is enabled and healthy.       [~5 min]
 
-8. Verify the runner appears as Idle in GitHub with the expected
-   steady-state label set, and SSH as admin with your personal
-   key works.                                                           [~1 min]
+7. Verify the runner appears as Idle in GitHub with the expected
+   label set, and that SSH as admin with your personal key works.      [~1 min]
 ```
 
 Note on the bootstrap-key lifecycle: the "bootstrap key" and the "Ansible controller's key" are the same key. It's listed in `inventory/group_vars/all.yml` as a permanent entry in `admin_authorized_keys` (typically with a name like `ansible-controller`), so every Ansible apply leaves it in place. `configure.sh --tester` pre-seeds the same public key into `admin/authorized_keys` so the *first* apply has a way in before the tester is in the inventory. To re-adopt a wiped-and-reimaged tester, re-run configure.sh and the controller can reach it again on the next apply.
 
-Total wall-clock: roughly an hour, of which ~30 minutes is unattended waiting (Debian install + Setup Runner).
+Total wall-clock: roughly an hour, of which ~45 minutes is unattended waiting (Debian install + setup_runner.sh building ESP-IDF). Human attention required: ~15 minutes.
 
 ### Adding or removing a human's SSH access
 
