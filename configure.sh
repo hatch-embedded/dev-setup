@@ -12,10 +12,12 @@ REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
 
 SKIP_GIT=false
 UNINSTALL_GUI=false
+TESTER=false
 for arg in "$@"; do
     case "$arg" in
         --uninstall-gui) UNINSTALL_GUI=true ;;
         --skip-git) SKIP_GIT=true ;;
+        --tester) TESTER=true; SKIP_GIT=true ;;
     esac
 done
 
@@ -124,6 +126,117 @@ enable_sudoless_serial_port() {
     echo "✅ | ENABLE sudoless serial port access"
 }
 
+create_hatch_runner() {
+    local RUNNER_USER="hatch-runner"
+    local SUDOERS_FILE="/etc/sudoers.d/hatch-runner"
+
+    if ! id "$RUNNER_USER" &>/dev/null; then
+        sudo useradd -r -m -s /bin/bash "$RUNNER_USER"
+    fi
+
+    for group in dialout docker; do
+        if getent group "$group" >/dev/null 2>&1; then
+            if ! groups "$RUNNER_USER" 2>/dev/null | grep -qw "$group"; then
+                sudo usermod -a -G "$group" "$RUNNER_USER"
+            fi
+        fi
+    done
+
+    sudo tee "$SUDOERS_FILE" >/dev/null <<'EOF'
+hatch-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt-get *
+hatch-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart actions.runner.*
+hatch-runner ALL=(ALL) NOPASSWD: /bin/systemctl stop actions.runner.*
+hatch-runner ALL=(ALL) NOPASSWD: /bin/systemctl start actions.runner.*
+EOF
+    sudo chmod 440 "$SUDOERS_FILE"
+    sudo visudo -c -f "$SUDOERS_FILE" >/dev/null
+
+    echo "✅ | CREATE hatch-runner service account"
+}
+
+harden_sshd_tester() {
+    local SSHD_CONFIG="/etc/ssh/sshd_config"
+    local DROPIN_DIR="/etc/ssh/sshd_config.d"
+    local CHANGED=false
+
+    if sudo grep -qE '^#?PermitRootLogin' "$SSHD_CONFIG"; then
+        # Replace existing line (commented or not)
+        local CURRENT
+        CURRENT=$(sudo grep -E '^#?PermitRootLogin' "$SSHD_CONFIG" | head -1)
+        if [ "$CURRENT" != "PermitRootLogin no" ]; then
+            sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
+            CHANGED=true
+        fi
+    else
+        echo 'PermitRootLogin no' | sudo tee -a "$SSHD_CONFIG" >/dev/null
+        CHANGED=true
+    fi
+
+    # On Debian 12+, sshd_config.d drop-ins can override the main config.
+    # Write a high-priority drop-in so our setting wins regardless.
+    if [ -d "$DROPIN_DIR" ]; then
+        local DROPIN="$DROPIN_DIR/99-hatch-tester.conf"
+        local DROPIN_CONTENT='PermitRootLogin no'
+        if [ ! -f "$DROPIN" ] || ! sudo grep -qxF "$DROPIN_CONTENT" "$DROPIN" 2>/dev/null; then
+            echo "$DROPIN_CONTENT" | sudo tee "$DROPIN" >/dev/null
+            CHANGED=true
+        fi
+    fi
+
+    if [ "$CHANGED" = true ]; then
+        sudo systemctl reload-or-restart ssh
+    fi
+
+    echo "✅ | HARDEN sshd (PermitRootLogin no)"
+}
+
+save_hardware_ids() {
+    local OUT_FILE="/etc/hatch-tester-ids.txt"
+
+    # Collect bluetooth MACs — try bluetoothctl first, fall back to sysfs
+    local BT_LINES=()
+    if command -v bluetoothctl >/dev/null 2>&1; then
+        while IFS= read -r line; do
+            BT_LINES+=("  $line")
+        done < <(bluetoothctl show 2>/dev/null | awk '/^Controller/{print $2}')
+    fi
+    if [ "${#BT_LINES[@]}" -eq 0 ]; then
+        for ADDR_FILE in /sys/class/bluetooth/*/address; do
+            [ -f "$ADDR_FILE" ] || continue
+            BT_LINES+=("  $(basename "$(dirname "$ADDR_FILE")")  $(cat "$ADDR_FILE")")
+        done
+    fi
+
+    {
+        echo "hostname:    $(hostname)"
+        echo "machine-id:  $(cat /etc/machine-id 2>/dev/null || echo unknown)"
+        echo ""
+        echo "network interfaces:"
+        ip -br link show 2>/dev/null | grep -v '^lo ' | while read -r IFACE STATE MAC _; do
+            case "$IFACE" in
+                en*) TYPE="ethernet" ;;
+                wl*) TYPE="wifi    " ;;
+                *)   TYPE="other   " ;;
+            esac
+            echo "  $TYPE  $IFACE  $MAC"
+        done
+        echo ""
+        echo "bluetooth:"
+        if [ "${#BT_LINES[@]}" -gt 0 ]; then
+            printf '%s\n' "${BT_LINES[@]}"
+        else
+            echo "  (none found)"
+        fi
+    } | sudo tee "$OUT_FILE" >/dev/null
+
+    echo ""
+    echo "======== Hardware Identifiers (saved to $OUT_FILE) ========"
+    sudo cat "$OUT_FILE"
+    echo "============================================================"
+    echo ""
+    echo "✅ | SAVE hardware identifiers"
+}
+
 download_scripts() {
     local FILENAMES=("update.sh" "cron.sh")
     local FILEPATH
@@ -158,6 +271,10 @@ apt_install_common() {
     local SYS_PKG=(ufw ca-certificates gnupg)
     local UTIL_PKG=(wget curl rsync openssh-server)
     local DEV_PKG=(git cmake ccache)
+    local TESTER_PKG=()
+    if [ "$TESTER" = true ]; then
+        TESTER_PKG=(bluez)
+    fi
     local PYTHON_PKG=(python3 python3-full python3-venv python3-virtualenv python3-setuptools python3-pip)
 
     # python-is-python3 is not available on Debian 11 (bullseye)
@@ -166,7 +283,7 @@ apt_install_common() {
     fi
 
     apt_update
-    apt_install "${SYS_PKG[@]}" "${UTIL_PKG[@]}" "${DEV_PKG[@]}" "${PYTHON_PKG[@]}"
+    apt_install "${SYS_PKG[@]}" "${UTIL_PKG[@]}" "${DEV_PKG[@]}" "${PYTHON_PKG[@]}" "${TESTER_PKG[@]}"
 
     echo "✅ | INSTALL common packages"
 }
@@ -441,7 +558,11 @@ if [ "$SKIP_GIT" != true ]; then
     configure_git
 fi
 
-if [ "$SKIP_GIT" != true ] && [ ! -d "$HOME/git/rest_plus" ]; then
+if [ "$TESTER" = true ]; then
+    create_hatch_runner
+    harden_sshd_tester
+    save_hardware_ids
+elif [ "$SKIP_GIT" != true ] && [ ! -d "$HOME/git/rest_plus" ]; then
     if prompt_yes_no "Would you like to clone and setup the firmware repository to '$HOME/git/rest_plus'? [Y/n]"; then
         setup_rest_plus
     fi
