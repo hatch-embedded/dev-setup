@@ -57,13 +57,13 @@ Here are the supported extra arguments:
     At the end of configuration, prompts the user to disable and uninstall the desktop environment
 
 --tester
-    Configures the machine as a HiL (Hardware-in-the-Loop) tester instead of a developer workstation.
+    Configures the machine as a HiL (Hardware-in-the-Loop) tester or unit tester instead of a developer workstation.
     Implies --skip-git. See "HiL Tester Setup" below.
 ```
 
-## HiL Tester Setup
+## HiL/Unit Tester Setup
 
-Run the script with `--tester` to provision a machine as a HiL tester:
+Run the script with `--tester` to provision a machine as a tester machine:
 
 ```sh
 curl -fsSL https://hatch-embedded.github.io/dev-setup/configure.sh | bash -s -- --tester
