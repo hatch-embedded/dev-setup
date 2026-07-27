@@ -11,7 +11,6 @@ REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
 WATCHDOG_DEVICE="/dev/watchdog0"
 WATCHDOG_RUNTIME_SEC=60
 WATCHDOG_REBOOT_SEC="10min"
-WATCHDOG_HUNG_TASK_SEC=300
 WATCHDOG_PANIC_SEC=30
 
 # Dynamic Config #
@@ -322,7 +321,7 @@ install_ssh_server() {
 
 enable_watchdog() {
     local WD_CONF="/etc/systemd/system.conf.d/watchdog.conf"
-    local SYSCTL_CONF="/etc/sysctl.d/60-hang-detect.conf"
+    local SYSCTL_CONF="/etc/sysctl.d/60-watchdog.conf"
 
     if [ ! -e "$WATCHDOG_DEVICE" ]; then
         echo "⚠️ $WATCHDOG_DEVICE not present"
@@ -338,10 +337,10 @@ EOF
         sudo systemctl daemon-reexec
     fi
 
+    # Only reboot a kernel that has already panicked. Panicking *proactively*
+    # (hung_task_panic, panic_on_oops) kills boxes that still accept SSH, which
+    # is the access this whole feature exists to preserve.
     if write_config "$SYSCTL_CONF" <<EOF
-kernel.hung_task_panic = 1
-kernel.hung_task_timeout_secs = $WATCHDOG_HUNG_TASK_SEC
-kernel.panic_on_oops = 1
 kernel.panic = $WATCHDOG_PANIC_SEC
 EOF
     then
