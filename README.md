@@ -58,4 +58,26 @@ Here are the supported extra arguments:
 
 --enable-watchdog
     Arms the hardware watchdog and panics the kernel on hung tasks, so the machine reboots itself instead of hanging silently. Intended for headless servers.
+
+--tester
+    Configures the machine as a HiL (Hardware-in-the-Loop) tester or unit tester instead of a developer workstation.
+    Implies --skip-git and --enable-watchdog. See "HiL Tester Setup" below.
 ```
+
+## HiL/Unit Tester Setup
+
+Run the script with `--tester` to provision a machine as a tester machine:
+
+```sh
+curl -fsSL https://hatch-embedded.github.io/dev-setup/configure.sh | bash -s -- --tester
+```
+
+This mode performs the following steps in addition to the standard setup:
+
+- **Installs `bluez`** for Bluetooth tooling
+- **Creates the `hatch-runner` service account** — a system user with membership in the `dialout` and `docker` groups and passwordless sudo for `apt-get` and GitHub Actions runner service management (`systemctl start/stop/restart actions.runner.*`)
+- **Hardens SSH** — sets `PermitRootLogin no` in `/etc/ssh/sshd_config` (and a drop-in under `sshd_config.d/` on Debian 12+) and reloads the SSH daemon
+- **Saves hardware identifiers** to `/etc/hatch-tester-ids.txt` — includes hostname, machine-id, network interface MACs, and Bluetooth controller MACs
+- **Arms the hardware watchdog** (see `--enable-watchdog`) so an unattended tester reboots itself instead of hanging silently
+
+Git configuration and firmware repository cloning are skipped in tester mode.
