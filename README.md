@@ -56,9 +56,13 @@ Here are the supported extra arguments:
 --uninstall-gui
     At the end of configuration, prompts the user to disable and uninstall the desktop environment
 
+--enable-watchdog
+    Arms the hardware watchdog so a machine that stops responding entirely reboots itself instead of hanging silently, and reboots a panicked or hung-shutdown kernel that would otherwise sit there forever. Intended for headless servers.
+    Deliberately minimal: it recovers only the failures that also take SSH down, and leaves a degraded-but-reachable machine alone for an operator to diagnose.
+
 --tester
     Configures the machine as a HiL (Hardware-in-the-Loop) tester or unit tester instead of a developer workstation.
-    Implies --skip-git. See "HiL Tester Setup" below.
+    Implies --skip-git and --enable-watchdog. See "HiL Tester Setup" below.
 ```
 
 ## HiL/Unit Tester Setup
@@ -75,5 +79,6 @@ This mode performs the following steps in addition to the standard setup:
 - **Creates the `hatch-runner` service account** — a system user with membership in the `dialout` and `docker` groups and passwordless sudo for `apt-get` and GitHub Actions runner service management (`systemctl start/stop/restart actions.runner.*`)
 - **Hardens SSH** — sets `PermitRootLogin no` in `/etc/ssh/sshd_config` (and a drop-in under `sshd_config.d/` on Debian 12+) and reloads the SSH daemon
 - **Saves hardware identifiers** to `/etc/hatch-tester-ids.txt` — includes hostname, machine-id, network interface MACs, and Bluetooth controller MACs
+- **Arms the hardware watchdog** (see `--enable-watchdog`) so an unattended tester that stops responding entirely reboots itself back into SSH reach
 
 Git configuration and firmware repository cloning are skipped in tester mode.

@@ -3,21 +3,28 @@ set -euo pipefail
 
 # Constant Config #
 
-VERSION="2.4"
+VERSION="2.5"
 HOST="https://hatch-embedded.github.io/dev-setup"
 SH="$HOME/sh"
 REBOOT_FILE="/tmp/.dev-setup-reboot-pending"
+
+WATCHDOG_DEVICE="/dev/watchdog0"
+WATCHDOG_RUNTIME_SEC=60
+WATCHDOG_REBOOT_SEC="10min"
+WATCHDOG_PANIC_SEC=30
 
 # Dynamic Config #
 
 SKIP_GIT=false
 UNINSTALL_GUI=false
+ENABLE_WATCHDOG=false
 TESTER=false
 for arg in "$@"; do
     case "$arg" in
         --uninstall-gui) UNINSTALL_GUI=true ;;
         --skip-git) SKIP_GIT=true ;;
-        --tester) TESTER=true; SKIP_GIT=true ;;
+        --enable-watchdog) ENABLE_WATCHDOG=true ;;
+        --tester) TESTER=true; SKIP_GIT=true; ENABLE_WATCHDOG=true ;;
     esac
 done
 
@@ -48,6 +55,24 @@ mark_reboot() {
 
 reboot_pending() {
     test -f "$REBOOT_FILE"
+}
+
+# Writes stdin to $1, creating parent directories. Returns 0 only when the
+# contents changed, so callers can skip reload side effects on repeat runs.
+write_config() {
+    local DEST="$1"
+    local TMP
+    TMP=$(mktemp)
+
+    cat > "$TMP"
+
+    if sudo cmp -s "$TMP" "$DEST"; then
+        rm -f "$TMP"
+        return 1
+    fi
+
+    sudo install -m 0644 -D "$TMP" "$DEST"
+    rm -f "$TMP"
 }
 
 user() {
@@ -292,6 +317,39 @@ install_ssh_server() {
     sudo ufw allow ssh >/dev/null
     sudo systemctl enable ssh --now >/dev/null 2>&1
     echo "✅ | INSTALL ssh server"
+}
+
+enable_watchdog() {
+    local WD_CONF="/etc/systemd/system.conf.d/watchdog.conf"
+    local SYSCTL_CONF="/etc/sysctl.d/60-watchdog.conf"
+
+    if [ ! -e "$WATCHDOG_DEVICE" ]; then
+        echo "⚠️ $WATCHDOG_DEVICE not present"
+        return 0
+    fi
+
+    if write_config "$WD_CONF" <<EOF
+[Manager]
+RuntimeWatchdogSec=$WATCHDOG_RUNTIME_SEC
+RebootWatchdogSec=$WATCHDOG_REBOOT_SEC
+EOF
+    then
+        sudo systemctl daemon-reexec
+    fi
+
+    # Only reboot a kernel that has already panicked. Panicking *proactively*
+    # (hung_task_panic, panic_on_oops) kills boxes that still accept SSH, which
+    # is the access this whole feature exists to preserve.
+    if write_config "$SYSCTL_CONF" <<EOF
+kernel.panic = $WATCHDOG_PANIC_SEC
+EOF
+    then
+        # -e: --system re-reads every distro-shipped sysctl.d file, and one
+        # unknown key anywhere would abort this script under `set -e`.
+        sudo sysctl -eq --system
+    fi
+
+    echo "✅ | ENABLE hardware watchdog"
 }
 
 # Check https://docs.docker.com/engine/install/ for updates
@@ -550,6 +608,11 @@ enable_sudoless_serial_port
 download_scripts
 apt_install_common
 install_ssh_server
+
+if [ "$ENABLE_WATCHDOG" = true ]; then
+    enable_watchdog
+fi
+
 install_docker
 install_claude
 schedule_updates
