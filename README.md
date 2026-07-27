@@ -55,4 +55,7 @@ Here are the supported extra arguments:
 
 --uninstall-gui
     At the end of configuration, prompts the user to disable and uninstall the desktop environment
+
+--enable-watchdog
+    Arms the hardware watchdog and panics the kernel on hung tasks, so the machine reboots itself instead of hanging silently. Intended for headless servers.
 ```
