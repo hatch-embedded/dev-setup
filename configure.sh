@@ -345,7 +345,9 @@ kernel.panic_on_oops = 1
 kernel.panic = $WATCHDOG_PANIC_SEC
 EOF
     then
-        sudo sysctl -q --system
+        # -e: --system re-reads every distro-shipped sysctl.d file, and one
+        # unknown key anywhere would abort this script under `set -e`.
+        sudo sysctl -eq --system
     fi
 
     echo "✅ | ENABLE hardware watchdog"
